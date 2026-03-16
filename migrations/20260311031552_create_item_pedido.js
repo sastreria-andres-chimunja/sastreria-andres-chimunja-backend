@@ -2,7 +2,7 @@
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.up = function (knex) {
+export async function up(knex) {
   return knex.schema.createTable("itemPedido", (table) => {
     table.increments("idItemPedido").primary();
     table
@@ -21,8 +21,8 @@ exports.up = function (knex) {
     table.text("observacion");
     table.date("fechaEntrega");
   });
-};
+}
 
-exports.down = function (knex) {
+export async function down(knex) {
   return knex.schema.dropTable("itemPedido");
-};
+}

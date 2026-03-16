@@ -2,13 +2,13 @@
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
-exports.up = function (knex) {
+export async function up(knex) {
   return knex.schema.createTable("metodoPago", (table) => {
     table.increments("idMetodoPago").primary();
     table.string("nombreMetodoPago");
   });
-};
+}
 
-exports.down = function (knex) {
+export async function down(knex) {
   return knex.schema.dropTable("metodoPago");
-};
+}
