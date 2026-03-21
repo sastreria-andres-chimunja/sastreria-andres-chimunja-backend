@@ -29,7 +29,13 @@ export const createCliente = async (data) => {
   if (cliente) {
     throw new Error("El cliente ya existe");
   }
-  return clienteRepository.createCliente(data);
+  const { nombres, apellidos, cedula, telefono } = data;
+  return clienteRepository.createCliente({
+    nombres,
+    apellidos,
+    cedula,
+    telefono,
+  });
 };
 
 export const updateCliente = async (id, data) => {

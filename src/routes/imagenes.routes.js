@@ -5,6 +5,7 @@ import { upload } from "../config/multer.js";
 const router = express.Router();
 
 router.get("/", imagenController.getImagenes);
+router.get("/:idImagen", imagenController.getImagenById);
 
 router.post(
   "/upload",

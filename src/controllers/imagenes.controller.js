@@ -14,6 +14,17 @@ export const getImagenes = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+export const getImagenById = async (req, res) => {
+  try {
+    const { idImagen } = req.params;
+
+    const imagen = await imagenService.getImagenById(idImagen);
+
+    res.json(imagen);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 export const uploadImagen = async (req, res) => {
   try {
