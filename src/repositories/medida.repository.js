@@ -1,18 +1,24 @@
 import db from "../config/database.js";
+import { formatFecha } from "../utils/date.utils.js";
 
 const TABLE = "medidas";
 
+const formatMedida = (m) =>
+  m ? { ...m, created_at: formatFecha(m.created_at) } : null;
+
 export const getMedidaById = async (idMedida) => {
-  return db(TABLE).where({ idMedida }).first();
+  const m = await db(TABLE).where({ idMedida }).first();
+  return formatMedida(m);
 };
+
 export const getMedidasByClientId = async (idCliente) => {
-  return db(TABLE).where({ idCliente });
+  const medidas = await db(TABLE).where({ idCliente });
+  return medidas.map(formatMedida);
 };
 
 export const createMedida = async (medida) => {
   const [newMedida] = await db(TABLE).insert(medida).returning("*");
-
-  return newMedida;
+  return formatMedida(newMedida);
 };
 
 export const updateMedida = async (idMedida, medida) => {
@@ -20,8 +26,7 @@ export const updateMedida = async (idMedida, medida) => {
     .where({ idMedida })
     .update(medida)
     .returning("*");
-
-  return updated;
+  return formatMedida(updated);
 };
 
 export const deleteMedida = async (idMedida) => {

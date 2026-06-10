@@ -19,8 +19,8 @@ export const getEmpleados = async (req, res) => {
 
 export const createEmpleado = async (req, res) => {
   try {
-    const empleado = await empleadoService.createEmpleado(req.body);
-    res.json({ empleado });
+    const { empleado, clave } = await empleadoService.createEmpleado(req.body);
+    res.json({ empleado, clave });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

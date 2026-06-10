@@ -2,13 +2,11 @@ import * as movimientoRepository from "../repositories/movimiento.repository.js"
 
 export const getMovimientoById = async (idMovimiento) => {
   const movimiento = await movimientoRepository.getMovimientoById(idMovimiento);
-
   return movimiento;
 };
-export const getMovimientos = async () => {
-  const movimientos = await movimientoRepository.getMovimientos();
 
-  return movimientos;
+export const getMovimientos = async (fechaInicio, fechaFin) => {
+  return movimientoRepository.getMovimientos(fechaInicio, fechaFin);
 };
 
 export const createMovimiento = async (data) => {

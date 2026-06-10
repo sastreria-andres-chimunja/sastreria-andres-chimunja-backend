@@ -1,4 +1,5 @@
 import * as empleadoRepository from "../repositories/empleado.repository.js";
+import { crearAuth } from "./auth.service.js";
 
 export const getEmpleadoById = async (idEmpleado) => {
   const empleado = await empleadoRepository.getEmpleadoById(idEmpleado);
@@ -12,7 +13,9 @@ export const getEmpleados = async () => {
 };
 
 export const createEmpleado = async (data) => {
-  return empleadoRepository.createEmpleado(data);
+  const empleado = await empleadoRepository.createEmpleado(data);
+  const clave = await crearAuth(empleado.idEmpleado);
+  return { empleado, clave };
 };
 
 export const updateEmpleado = async (id, data) => {

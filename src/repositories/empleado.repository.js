@@ -1,27 +1,40 @@
 import db from "../config/database.js";
+import { parseFecha, formatFecha } from "../utils/date.utils.js";
 
 const TABLE = "empleado";
 
+const formatEmpleado = (emp) =>
+  emp ? { ...emp, fechaCumpleanios: formatFecha(emp.fechaCumpleanios) } : null;
+
 export const getEmpleadoById = async (idEmpleado) => {
-  return db(TABLE).where({ idEmpleado }).first();
+  const emp = await db(TABLE).where({ idEmpleado }).first();
+  return formatEmpleado(emp);
 };
+
 export const getEmpleados = async () => {
-  return db(TABLE);
+  const emps = await db(TABLE);
+  return emps.map(formatEmpleado);
 };
 
 export const createEmpleado = async (empleado) => {
-  const [newEmpleado] = await db(TABLE).insert(empleado).returning("*");
-
-  return newEmpleado;
+  const data = {
+    ...empleado,
+    fechaCumpleanios: parseFecha(empleado.fechaCumpleanios),
+  };
+  const [newEmpleado] = await db(TABLE).insert(data).returning("*");
+  return formatEmpleado(newEmpleado);
 };
 
 export const updateEmpleado = async (idEmpleado, empleado) => {
+  const data = {
+    ...empleado,
+    fechaCumpleanios: parseFecha(empleado.fechaCumpleanios),
+  };
   const [updated] = await db(TABLE)
     .where({ idEmpleado })
-    .update(empleado)
+    .update(data)
     .returning("*");
-
-  return updated;
+  return formatEmpleado(updated);
 };
 
 export const deleteEmpleado = async (idEmpleado) => {
