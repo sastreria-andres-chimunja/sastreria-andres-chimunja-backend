@@ -30,6 +30,7 @@ export async function up(knex) {
     table.decimal("rodilla", 5, 2);
     table.decimal("bota", 5, 2);
     table.text("otros");
+    table.text("observaciones");
     table.text("tipoPrenda");
     table.timestamps(true, true);
   });
