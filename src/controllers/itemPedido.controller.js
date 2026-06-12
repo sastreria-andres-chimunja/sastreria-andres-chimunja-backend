@@ -51,3 +51,12 @@ export const deleteItemPedido = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const pagarItemPedido = async (req, res) => {
+  try {
+    const item = await itemPedidoService.pagarItemPedido(req.params.id);
+    res.json({ item });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

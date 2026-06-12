@@ -6,6 +6,7 @@ const router = Router();
 router.get("/", itemPedidoController.getItemsPedido);
 router.get("/:id", itemPedidoController.getItemPedidoById);
 router.post("/", itemPedidoController.createItemPedido);
+router.put("/:id/pagar", itemPedidoController.pagarItemPedido);
 router.put("/:id", itemPedidoController.updateItemPedido);
 router.delete("/:id", itemPedidoController.deleteItemPedido);
 

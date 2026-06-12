@@ -3,8 +3,8 @@ import * as medidaController from "../controllers/medida.controller.js";
 
 const router = Router();
 
-router.get("/:id", medidaController.getMedidaById);
 router.get("/byCustomer/:id", medidaController.getMedidasByClientId);
+router.get("/:id", medidaController.getMedidaById);
 
 router.post("/", medidaController.createMedida);
 

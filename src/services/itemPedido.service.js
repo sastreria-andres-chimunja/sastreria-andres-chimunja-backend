@@ -14,3 +14,6 @@ export const updateItemPedido = async (idItemPedido, data) =>
 
 export const deleteItemPedido = async (idItemPedido) =>
   itemPedidoRepository.deleteItemPedido(idItemPedido);
+
+export const pagarItemPedido = async (idItemPedido) =>
+  itemPedidoRepository.pagarItemPedido(idItemPedido);

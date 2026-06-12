@@ -14,42 +14,54 @@ const formatPedido = (p) =>
       }
     : null;
 
+const BASE_QUERY = () =>
+  db(TABLE)
+    .leftJoin("cliente as c", "c.idCliente", `${TABLE}.idCliente`)
+    .leftJoin("estado as e", "e.idEstado", `${TABLE}.idEstado`)
+    .select(
+      `${TABLE}.*`,
+      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
+      `c.telefono as telefonoCliente`,
+      `e.nombre as nombreEstado`
+    );
+
 export const getPedidos = async (fechaInicio, fechaFin) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
-  let query = db(TABLE).orderBy("created_at", "desc");
-  if (desde) query = query.where("fechaEntrega", ">=", desde);
-  if (hasta) query = query.where("fechaEntrega", "<=", hasta);
+  let query = BASE_QUERY().orderBy(`${TABLE}.created_at`, "desc");
+  if (desde) query = query.where(`${TABLE}.fechaEntrega`, ">=", desde);
+  if (hasta) query = query.where(`${TABLE}.fechaEntrega`, "<=", hasta);
   const pedidos = await query;
   return pedidos.map(formatPedido);
 };
 
 export const getPedidoById = async (idPedido) => {
-  const p = await db(TABLE).where({ idPedido }).first();
+  const p = await BASE_QUERY().where({ [`${TABLE}.idPedido`]: idPedido }).first();
   return formatPedido(p);
 };
 
 export const createPedido = async (pedido) => {
   const data = {
-    ...pedido,
+    idCliente: pedido.idCliente,
+    idEstado: pedido.idEstado,
+    valorTotal: pedido.valorTotal,
     fechaRecibido: parseFecha(pedido.fechaRecibido),
     fechaEntrega: parseFecha(pedido.fechaEntrega),
   };
   const [newPedido] = await db(TABLE).insert(data).returning("*");
-  return formatPedido(newPedido);
+  return getPedidoById(newPedido.idPedido);
 };
 
 export const updatePedido = async (idPedido, pedido) => {
   const data = {
-    ...pedido,
+    idCliente: pedido.idCliente,
+    idEstado: pedido.idEstado,
+    valorTotal: pedido.valorTotal,
     fechaRecibido: parseFecha(pedido.fechaRecibido),
     fechaEntrega: parseFecha(pedido.fechaEntrega),
   };
-  const [updated] = await db(TABLE)
-    .where({ idPedido })
-    .update(data)
-    .returning("*");
-  return formatPedido(updated);
+  await db(TABLE).where({ idPedido }).update(data);
+  return getPedidoById(idPedido);
 };
 
 export const deletePedido = async (idPedido) =>

@@ -16,6 +16,7 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin) => {
   let itemsQuery = db("itemPedido as ip")
     .leftJoin("pedido as p", "p.idPedido", "ip.idPedido")
     .where("ip.idEmpleado", idEmpleado)
+    .where("ip.pagado", false)
     .select(
       "ip.idItemPedido",
       "ip.descripcion",
@@ -42,12 +43,12 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin) => {
     0
   );
 
-  // Salidas: abonos (tipoReferencia = 'Nómina') con filtro opcional por fecha
+  // Salidas: abonos de tipo Salida (id=2) ligados al empleado
   let abonosQuery = db("movimiento as m")
     .join("tipoMovimiento as tm", "tm.idTipoMovimiento", "m.idTipoMovimiento")
-    .where("m.tipoReferencia", "Nómina")
+    .whereIn("m.tipoReferencia", ["Nómina", "empleado"])
     .where("m.idReferencia", idEmpleado)
-    .whereRaw('LOWER(tm."nombreTipoMovimiento") = ?', ["abono"])
+    .where("m.idTipoMovimiento", 2)
     .select(
       "m.idMovimiento",
       "m.fecha",
@@ -90,6 +91,7 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
   // Entradas por empleado: suma del valor de sus ítems
   let entradasQuery = db("itemPedido")
     .whereNotNull("idEmpleado")
+    .where("pagado", false)
     .groupBy("idEmpleado")
     .select(
       "idEmpleado",
@@ -99,11 +101,10 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
   if (hasta) entradasQuery = entradasQuery.where("fechaEntrega", "<=", hasta);
   const entradasRows = await entradasQuery;
 
-  // Salidas por empleado: suma de abonos (tipoReferencia = 'Nómina')
+  // Salidas por empleado: suma de movimientos de tipo Salida (id=2) ligados a empleado
   let salidasQuery = db("movimiento as m")
-    .join("tipoMovimiento as tm", "tm.idTipoMovimiento", "m.idTipoMovimiento")
-    .where("m.tipoReferencia", "Nómina")
-    .whereRaw('LOWER(tm."nombreTipoMovimiento") = ?', ["abono"])
+    .whereIn("m.tipoReferencia", ["Nómina", "empleado"])
+    .where("m.idTipoMovimiento", 2)
     .groupBy("m.idReferencia")
     .select(
       "m.idReferencia as idEmpleado",
