@@ -5,8 +5,8 @@ export const getMovimientoById = async (idMovimiento) => {
   return movimiento;
 };
 
-export const getMovimientos = async (fechaInicio, fechaFin) => {
-  return movimientoRepository.getMovimientos(fechaInicio, fechaFin);
+export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
+  return movimientoRepository.getMovimientos(fechaInicio, fechaFin, categoria);
 };
 
 export const createMovimiento = async (data) => {

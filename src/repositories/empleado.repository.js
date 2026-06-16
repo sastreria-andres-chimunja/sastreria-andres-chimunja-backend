@@ -6,13 +6,18 @@ const TABLE = "empleado";
 const formatEmpleado = (emp) =>
   emp ? { ...emp, fechaCumpleanios: formatFecha(emp.fechaCumpleanios) } : null;
 
+const WITH_ROL = () =>
+  db(TABLE)
+    .leftJoin('rol as r', 'r.idRol', `${TABLE}.idRol`)
+    .select(`${TABLE}.*`, 'r.nombre as nombreRol');
+
 export const getEmpleadoById = async (idEmpleado) => {
-  const emp = await db(TABLE).where({ idEmpleado }).first();
+  const emp = await WITH_ROL().where({ [`${TABLE}.idEmpleado`]: idEmpleado }).first();
   return formatEmpleado(emp);
 };
 
 export const getEmpleados = async () => {
-  const emps = await db(TABLE);
+  const emps = await WITH_ROL().orderBy(`${TABLE}.idEmpleado`);
   return emps.map(formatEmpleado);
 };
 
@@ -26,10 +31,8 @@ export const createEmpleado = async (empleado) => {
 };
 
 export const updateEmpleado = async (idEmpleado, empleado) => {
-  const data = {
-    ...empleado,
-    fechaCumpleanios: parseFecha(empleado.fechaCumpleanios),
-  };
+  const { nombres, apellidos, telefono, direccion, idRol, fechaCumpleanios } = empleado;
+  const data = { nombres, apellidos, telefono, direccion, idRol, fechaCumpleanios: parseFecha(fechaCumpleanios) };
   const [updated] = await db(TABLE)
     .where({ idEmpleado })
     .update(data)

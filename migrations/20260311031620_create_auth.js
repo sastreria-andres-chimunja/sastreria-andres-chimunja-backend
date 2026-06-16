@@ -1,7 +1,3 @@
-/**
- * @param { import("knex").Knex } knex
- * @returns { Promise<void> }
- */
 export async function up(knex) {
   return knex.schema.createTable("auth", (table) => {
     table.increments("idAuth").primary();
@@ -13,6 +9,7 @@ export async function up(knex) {
       .inTable("empleado")
       .onDelete("CASCADE");
     table.string("clave", 255).notNullable();
+    table.string("username", 100).nullable().unique();
     table.timestamps(true, true);
   });
 }

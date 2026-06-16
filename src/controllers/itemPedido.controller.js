@@ -60,3 +60,21 @@ export const pagarItemPedido = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const getPagosItem = async (req, res) => {
+  try {
+    const pagos = await itemPedidoService.getPagosItem(req.params.id);
+    res.json({ pagos });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const registrarPago = async (req, res) => {
+  try {
+    const result = await itemPedidoService.registrarPago(req.params.id, req.body);
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

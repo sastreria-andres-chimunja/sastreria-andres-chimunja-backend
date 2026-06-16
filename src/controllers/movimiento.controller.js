@@ -10,8 +10,8 @@ export const getMovimientoById = async (req, res) => {
 };
 export const getMovimientos = async (req, res) => {
   try {
-    const { fechaInicio, fechaFin } = req.query;
-    const movimientos = await movimientoService.getMovimientos(fechaInicio, fechaFin);
+    const { fechaInicio, fechaFin, categoria } = req.query;
+    const movimientos = await movimientoService.getMovimientos(fechaInicio, fechaFin, categoria);
     res.json({ movimientos });
   } catch (error) {
     res.status(404).json({ error: error.message });

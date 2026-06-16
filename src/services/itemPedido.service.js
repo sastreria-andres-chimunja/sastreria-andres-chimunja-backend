@@ -17,3 +17,9 @@ export const deleteItemPedido = async (idItemPedido) =>
 
 export const pagarItemPedido = async (idItemPedido) =>
   itemPedidoRepository.pagarItemPedido(idItemPedido);
+
+export const getPagosItem = async (idItemPedido) =>
+  itemPedidoRepository.getPagosItem(idItemPedido);
+
+export const registrarPago = async (idItemPedido, pagoData) =>
+  itemPedidoRepository.registrarPago(idItemPedido, pagoData);

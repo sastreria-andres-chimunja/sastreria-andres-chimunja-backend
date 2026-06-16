@@ -1,7 +1,3 @@
-/**
- * @param { import("knex").Knex } knex
- * @returns { Promise<void> }
- */
 export async function up(knex) {
   return knex.schema.createTable("itemPedido", (table) => {
     table.increments("idItemPedido").primary();
@@ -10,16 +6,21 @@ export async function up(knex) {
       .references("idPedido")
       .inTable("pedido")
       .onDelete("CASCADE");
-
     table.integer("idEmpleado").references("idEmpleado").inTable("empleado");
-
+    table
+      .integer("idMedida")
+      .unsigned()
+      .nullable()
+      .references("idMedida")
+      .inTable("medidas")
+      .onDelete("SET NULL");
     table.decimal("valor", 12, 2);
     table.decimal("comisionEmpleado", 12, 2);
     table.text("descripcion");
     table.integer("idEstado").references("idEstado").inTable("estado");
-
     table.text("observacion");
     table.date("fechaEntrega");
+    table.boolean("pagado").notNullable().defaultTo(false);
   });
 }
 

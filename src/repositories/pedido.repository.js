@@ -25,12 +25,22 @@ const BASE_QUERY = () =>
       `e.nombre as nombreEstado`
     );
 
-export const getPedidos = async (fechaInicio, fechaFin) => {
+export const getPedidos = async (fechaInicio, fechaFin, idEmpleado) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
   let query = BASE_QUERY().orderBy(`${TABLE}.created_at`, "desc");
   if (desde) query = query.where(`${TABLE}.fechaEntrega`, ">=", desde);
   if (hasta) query = query.where(`${TABLE}.fechaEntrega`, "<=", hasta);
+
+  // Filtro por operario: solo pedidos que tienen al menos un ítem asignado a ese empleado
+  if (idEmpleado) {
+    query = query.whereExists(
+      db("itemPedido as ip")
+        .where("ip.idPedido", db.raw(`"${TABLE}"."idPedido"`))
+        .where("ip.idEmpleado", idEmpleado)
+    );
+  }
+
   const pedidos = await query;
   return pedidos.map(formatPedido);
 };
@@ -66,3 +76,42 @@ export const updatePedido = async (idPedido, pedido) => {
 
 export const deletePedido = async (idPedido) =>
   db(TABLE).where({ idPedido }).del();
+
+// ─── Abonos de cliente a nivel de pedido ────────────────────────────────────
+export const getAbonosPedido = async (idPedido) => {
+  const abonos = await db("movimiento as mv")
+    .leftJoin("metodoPago as mp", "mp.idMetodoPago", "mv.idMetodoPago")
+    .where({ "mv.tipoReferencia": "pedido", "mv.idReferencia": idPedido })
+    .orderBy("mv.fecha", "desc")
+    .select("mv.*", "mp.nombreMetodoPago");
+  return abonos.map((a) => ({ ...a, fecha: formatFecha(a.fecha) }));
+};
+
+export const registrarAbonoPedido = async (idPedido, { idMetodoPago, valor, observacion }) => {
+  const pedido = await getPedidoById(idPedido);
+  if (!pedido) throw new Error("Pedido no encontrado");
+
+  const tipoEntrada = await db("tipoMovimiento")
+    .whereRaw("LOWER(\"nombreTipoMovimiento\") like '%ingreso%'")
+    .first();
+  const catPago = await db("categoriaMovimiento")
+    .whereRaw("LOWER(\"nombreCategoriaMovimiento\") like '%venta%'")
+    .first();
+
+  const obsBase = `Abono pedido #${idPedido}`;
+  await db("movimiento").insert({
+    idTipoMovimiento: tipoEntrada?.idTipoMovimiento ?? 1,
+    idCategoriaMovimiento: catPago?.idCategoriaMovimiento ?? null,
+    idMetodoPago: idMetodoPago || null,
+    valor,
+    tipoReferencia: "pedido",
+    idReferencia: idPedido,
+    observacion: observacion ? `${obsBase} | ${observacion}` : obsBase,
+    fecha: db.fn.now(),
+  });
+
+  const abonos = await getAbonosPedido(idPedido);
+  const totalAbonado = abonos.reduce((s, a) => s + Number(a.valor), 0);
+
+  return { pedido, totalAbonado, abonos };
+};

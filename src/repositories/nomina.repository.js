@@ -32,14 +32,18 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin) => {
   if (hasta) itemsQuery = itemsQuery.where("ip.fechaEntrega", "<=", hasta);
   const items = await itemsQuery;
 
-  const itemsFormateados = items.map((item) => ({
-    ...item,
-    fechaEntrega: formatFecha(item.fechaEntrega),
-    fechaRecibido: formatFecha(item.fechaRecibido),
-  }));
+  const itemsFormateados = items.map((item) => {
+    const valorEmpleado = Number(item.valor ?? 0) * Number(item.comisionEmpleado ?? 0) / 100;
+    return {
+      ...item,
+      fechaEntrega: formatFecha(item.fechaEntrega),
+      fechaRecibido: formatFecha(item.fechaRecibido),
+      valorEmpleado,
+    };
+  });
 
   const totalEntradas = itemsFormateados.reduce(
-    (sum, item) => sum + Number(item.valor ?? 0),
+    (sum, item) => sum + item.valorEmpleado,
     0
   );
 
@@ -95,7 +99,7 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
     .groupBy("idEmpleado")
     .select(
       "idEmpleado",
-      db.raw('COALESCE(SUM(valor), 0) as "totalEntradas"')
+      db.raw('COALESCE(SUM(valor * "comisionEmpleado" / 100.0), 0) as "totalEntradas"')
     );
   if (desde) entradasQuery = entradasQuery.where("fechaEntrega", ">=", desde);
   if (hasta) entradasQuery = entradasQuery.where("fechaEntrega", "<=", hasta);
