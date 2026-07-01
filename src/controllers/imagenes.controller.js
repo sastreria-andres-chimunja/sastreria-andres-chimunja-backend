@@ -30,8 +30,6 @@ export const uploadImagen = async (req, res) => {
   try {
     const { tipoReferencia, idReferencia } = req.body;
     const imagenes = [];
-    console.log("body:", req.body);
-    console.log("files:", req.files);
     for (const file of req.files) {
       const imagen = {
         tipoReferencia,

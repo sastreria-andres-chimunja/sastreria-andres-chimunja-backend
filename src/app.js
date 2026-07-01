@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
 import clienteRoutes from "./routes/cliente.routes.js";
@@ -16,18 +17,33 @@ import authRoutes from "./routes/auth.routes.js";
 import estadoRoutes from "./routes/estado.routes.js";
 import pedidoRoutes from "./routes/pedido.routes.js";
 import itemPedidoRoutes from "./routes/itemPedido.routes.js";
+import whatsappRoutes from "./routes/whatsapp.routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-app.use(cors({ origin: "*" }));
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
+const allowedOrigins = process.env.FRONTEND_ORIGIN
+  ? process.env.FRONTEND_ORIGIN.split(",").map((o) => o.trim())
+  : ["http://localhost:4200"];
+app.use(
+  cors({
+    origin: allowedOrigins,
+  })
+);
 // ── Middlewares ──
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ── Archivos estáticos──
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 // CORS
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 
 // rutas
 app.use("/clientes", clienteRoutes);
@@ -44,4 +60,5 @@ app.use("/auth", authRoutes);
 app.use("/estado", estadoRoutes);
 app.use("/pedidos", pedidoRoutes);
 app.use("/itemPedido", itemPedidoRoutes);
+app.use("/whatsapp", whatsappRoutes);
 export default app;
