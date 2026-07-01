@@ -12,6 +12,41 @@ const getIdEstadoAuto = async (idEmpleado) => {
 const formatItem = (item) =>
   item ? { ...item, fechaEntrega: formatFecha(item.fechaEntrega) } : null;
 
+// Sincroniza el estado del pedido según el estado de todos sus ítems.
+// Reglas: todos Entregado → pedido Entregado · todos Terminado → pedido Terminado
+//         si estaba en terminal y ya no cumple → vuelve a Asignado
+const sincronizarEstadoPedido = async (idItemPedido) => {
+  const item = await db(TABLE).where({ idItemPedido }).first();
+  if (!item) return;
+
+  const [estadoTerminado, estadoEntregado, estadoAsignado] = await Promise.all([
+    db("estado").whereRaw("LOWER(nombre) = 'terminado'").first(),
+    db("estado").whereRaw("LOWER(nombre) = 'entregado'").first(),
+    db("estado").whereRaw("LOWER(nombre) = 'asignado'").first(),
+  ]);
+
+  const items = await db(TABLE).where({ idPedido: item.idPedido }).select("idEstado");
+  if (items.length === 0) return;
+
+  const pedido = await db("pedido").where({ idPedido: item.idPedido }).select("idEstado").first();
+  if (!pedido) return;
+
+  const todosEntregado = estadoEntregado && items.every((i) => i.idEstado === estadoEntregado.idEstado);
+  const todosTerminado = estadoTerminado && items.every((i) => i.idEstado === estadoTerminado.idEstado);
+
+  if (todosEntregado) {
+    await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: estadoEntregado.idEstado });
+  } else if (todosTerminado) {
+    await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: estadoTerminado.idEstado });
+  } else {
+    // Si el pedido estaba en un estado terminal pero ya no todos los ítems lo cumplen → Asignado
+    const idsTerminales = [estadoTerminado?.idEstado, estadoEntregado?.idEstado].filter(Boolean);
+    if (estadoAsignado && idsTerminales.includes(pedido.idEstado)) {
+      await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: estadoAsignado.idEstado });
+    }
+  }
+};
+
 const BASE_QUERY = () =>
   db(TABLE)
     .leftJoin("empleado as emp", "emp.idEmpleado", `${TABLE}.idEmpleado`)
@@ -24,11 +59,12 @@ const BASE_QUERY = () =>
       `m.tipoPrenda as tipoPrendaMedida`
     );
 
-export const getItemsPedido = async (idPedido, fechaInicio, fechaFin) => {
+export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
   let query = BASE_QUERY().orderBy(`${TABLE}.idItemPedido`, "asc");
   if (idPedido) query = query.where({ [`${TABLE}.idPedido`]: idPedido });
+  if (idEmpleado) query = query.where({ [`${TABLE}.idEmpleado`]: idEmpleado });
   if (desde) query = query.where(`${TABLE}.fechaEntrega`, ">=", desde);
   if (hasta) query = query.where(`${TABLE}.fechaEntrega`, "<=", hasta);
   const items = await query;
@@ -50,29 +86,46 @@ export const createItemPedido = async (item) => {
     idEstado: await getIdEstadoAuto(idEmpleado),
     idMedida: item.idMedida || null,
     valor: item.valor,
-    comisionEmpleado: item.comisionEmpleado || 0,
+    comisionEmpleado: item.comisionEmpleado ?? 50,
     descripcion: item.descripcion,
     observacion: item.observacion || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
     pagado: false,
   };
   const [newItem] = await db(TABLE).insert(data).returning("*");
+  await sincronizarEstadoPedido(newItem.idItemPedido);
   return getItemPedidoById(newItem.idItemPedido);
 };
 
 export const updateItemPedido = async (idItemPedido, item) => {
   const idEmpleado = item.idEmpleado || null;
+  // Respetar idEstado si viene explícitamente; si no, calcular automático
+  const idEstado = item.idEstado != null
+    ? item.idEstado
+    : await getIdEstadoAuto(idEmpleado);
   const data = {
     idEmpleado,
-    idEstado: await getIdEstadoAuto(idEmpleado),
+    idEstado,
     idMedida: item.idMedida || null,
     valor: item.valor,
-    comisionEmpleado: item.comisionEmpleado || 0,
+    comisionEmpleado: item.comisionEmpleado ?? 0,
     descripcion: item.descripcion,
     observacion: item.observacion || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
   };
   await db(TABLE).where({ idItemPedido }).update(data);
+  await sincronizarEstadoPedido(idItemPedido);
+  return getItemPedidoById(idItemPedido);
+};
+
+export const cambiarEstadoItem = async (idItemPedido, idEstado) => {
+  await db(TABLE).where({ idItemPedido }).update({ idEstado });
+  await sincronizarEstadoPedido(idItemPedido);
+  return getItemPedidoById(idItemPedido);
+};
+
+export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) => {
+  await db(TABLE).where({ idItemPedido }).update({ comisionEmpleado });
   return getItemPedidoById(idItemPedido);
 };
 

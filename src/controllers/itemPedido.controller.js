@@ -2,11 +2,12 @@ import * as itemPedidoService from "../services/itemPedido.service.js";
 
 export const getItemsPedido = async (req, res) => {
   try {
-    const { idPedido, fechaInicio, fechaFin } = req.query;
+    const { idPedido, fechaInicio, fechaFin, idEmpleado } = req.query;
     const items = await itemPedidoService.getItemsPedido(
       idPedido ? Number(idPedido) : undefined,
       fechaInicio,
-      fechaFin
+      fechaFin,
+      idEmpleado ? Number(idEmpleado) : undefined
     );
     res.json({ items });
   } catch (error) {
@@ -74,6 +75,26 @@ export const registrarPago = async (req, res) => {
   try {
     const result = await itemPedidoService.registrarPago(req.params.id, req.body);
     res.status(201).json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const cambiarEstadoItem = async (req, res) => {
+  try {
+    const { idEstado } = req.body;
+    const item = await itemPedidoService.cambiarEstadoItem(req.params.id, idEstado);
+    res.json({ item });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const cambiarComisionItem = async (req, res) => {
+  try {
+    const { comisionEmpleado } = req.body;
+    const item = await itemPedidoService.cambiarComisionItem(req.params.id, comisionEmpleado);
+    res.json({ item });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

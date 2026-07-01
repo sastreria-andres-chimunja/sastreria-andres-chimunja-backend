@@ -1,7 +1,7 @@
 import * as itemPedidoRepository from "../repositories/itemPedido.repository.js";
 
-export const getItemsPedido = async (idPedido, fechaInicio, fechaFin) =>
-  itemPedidoRepository.getItemsPedido(idPedido, fechaInicio, fechaFin);
+export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) =>
+  itemPedidoRepository.getItemsPedido(idPedido, fechaInicio, fechaFin, idEmpleado);
 
 export const getItemPedidoById = async (idItemPedido) =>
   itemPedidoRepository.getItemPedidoById(idItemPedido);
@@ -23,3 +23,9 @@ export const getPagosItem = async (idItemPedido) =>
 
 export const registrarPago = async (idItemPedido, pagoData) =>
   itemPedidoRepository.registrarPago(idItemPedido, pagoData);
+
+export const cambiarEstadoItem = async (idItemPedido, idEstado) =>
+  itemPedidoRepository.cambiarEstadoItem(idItemPedido, idEstado);
+
+export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) =>
+  itemPedidoRepository.cambiarComisionItem(idItemPedido, comisionEmpleado);

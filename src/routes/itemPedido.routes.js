@@ -7,6 +7,8 @@ router.get("/", itemPedidoController.getItemsPedido);
 // Specific sub-routes before generic /:id
 router.get("/:id/pagos", itemPedidoController.getPagosItem);
 router.put("/:id/pagar", itemPedidoController.pagarItemPedido);
+router.put("/:id/estado", itemPedidoController.cambiarEstadoItem);
+router.put("/:id/comision", itemPedidoController.cambiarComisionItem);
 router.post("/:id/registrar-pago", itemPedidoController.registrarPago);
 router.get("/:id", itemPedidoController.getItemPedidoById);
 router.post("/", itemPedidoController.createItemPedido);
