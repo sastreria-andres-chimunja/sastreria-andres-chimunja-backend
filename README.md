@@ -42,7 +42,7 @@ En `.env.production` ya están los valores fijos (incluyendo un `JWT_SECRET` fue
    ```
 4. Levantar el proceso con PM2:
    ```bash
-   npm run pm2:start      # pm2 start ecosystem.config.js --env production
+   npm run pm2:start      # pm2 start ecosystem.config.cjs --env production
    pm2 save                # persiste el proceso entre reinicios del VPS
    pm2 startup              # configura el arranque automático del sistema
    ```
