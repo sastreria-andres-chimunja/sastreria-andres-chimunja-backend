@@ -23,13 +23,16 @@ export const searchClientes = async (text) => {
 };
 
 export const createCliente = async (data) => {
-  const cliente = await clienteRepository.getClienteByIdentification(
-    data.cedula,
-  );
-  if (cliente) {
-    throw new Error("El cliente ya existe");
+  const { nombres, apellidos, telefono } = data;
+  const cedula = data.cedula?.trim() ? data.cedula.trim() : null;
+
+  if (cedula) {
+    const cliente = await clienteRepository.getClienteByIdentification(cedula);
+    if (cliente) {
+      throw new Error("El cliente ya existe");
+    }
   }
-  const { nombres, apellidos, cedula, telefono } = data;
+
   return clienteRepository.createCliente({
     nombres,
     apellidos,
@@ -39,7 +42,8 @@ export const createCliente = async (data) => {
 };
 
 export const updateCliente = async (id, data) => {
-  return clienteRepository.updateCliente(id, data);
+  const cedula = data.cedula?.trim() ? data.cedula.trim() : null;
+  return clienteRepository.updateCliente(id, { ...data, cedula });
 };
 
 export const deleteCliente = async (id) => {
