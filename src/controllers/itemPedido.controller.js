@@ -90,6 +90,16 @@ export const cambiarEstadoItem = async (req, res) => {
   }
 };
 
+export const asignarEmpleadoItem = async (req, res) => {
+  try {
+    const { idEmpleado } = req.body;
+    const item = await itemPedidoService.asignarEmpleadoItem(req.params.id, idEmpleado);
+    res.json({ item });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const cambiarComisionItem = async (req, res) => {
   try {
     const { comisionEmpleado } = req.body;

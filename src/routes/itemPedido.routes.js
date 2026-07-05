@@ -9,6 +9,7 @@ router.get("/:id/pagos", itemPedidoController.getPagosItem);
 router.put("/:id/pagar", itemPedidoController.pagarItemPedido);
 router.put("/:id/estado", itemPedidoController.cambiarEstadoItem);
 router.put("/:id/comision", itemPedidoController.cambiarComisionItem);
+router.put("/:id/asignar", itemPedidoController.asignarEmpleadoItem);
 router.post("/:id/registrar-pago", itemPedidoController.registrarPago);
 router.get("/:id", itemPedidoController.getItemPedidoById);
 router.post("/", itemPedidoController.createItemPedido);

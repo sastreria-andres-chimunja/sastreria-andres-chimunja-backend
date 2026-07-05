@@ -124,6 +124,13 @@ export const cambiarEstadoItem = async (idItemPedido, idEstado) => {
   return getItemPedidoById(idItemPedido);
 };
 
+export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) => {
+  const idEstado = await getIdEstadoAuto(idEmpleado);
+  await db(TABLE).where({ idItemPedido }).update({ idEmpleado, idEstado });
+  await sincronizarEstadoPedido(idItemPedido);
+  return getItemPedidoById(idItemPedido);
+};
+
 export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) => {
   await db(TABLE).where({ idItemPedido }).update({ comisionEmpleado });
   return getItemPedidoById(idItemPedido);

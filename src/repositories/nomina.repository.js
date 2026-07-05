@@ -1,6 +1,16 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
 
+// Excluye ítems cuyo pedido esté marcado "No realizado" — esos pedidos no
+// deben contar para la nómina de ningún empleado.
+const excluirPedidosNoRealizados = (query, aliasItem = "ip") =>
+  query.whereNotExists(
+    db("pedido as pnr")
+      .join("estado as enr", "enr.idEstado", "pnr.idEstado")
+      .whereRaw(`pnr."idPedido" = "${aliasItem}"."idPedido"`)
+      .whereRaw("LOWER(enr.nombre) = 'no realizado'")
+  );
+
 // ─────────────────────────────────────────────
 //  Nómina individual
 // ─────────────────────────────────────────────
@@ -53,13 +63,14 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
 
   // ── Modo normal: ítems pendientes de pago + abonos aún no liquidados ──
 
-  let itemsQuery = db("itemPedido as ip")
-    .leftJoin("pedido as p", "p.idPedido", "ip.idPedido")
-    .join("estado as est", "est.idEstado", "ip.idEstado")
-    .where("ip.idEmpleado", idEmpleado)
-    .where("ip.pagado", false)
-    .whereRaw("LOWER(est.nombre) = 'terminado'")
-    .select(
+  let itemsQuery = excluirPedidosNoRealizados(
+    db("itemPedido as ip")
+      .leftJoin("pedido as p", "p.idPedido", "ip.idPedido")
+      .join("estado as est", "est.idEstado", "ip.idEstado")
+      .where("ip.idEmpleado", idEmpleado)
+      .where("ip.pagado", false)
+      .whereRaw("LOWER(est.nombre) = 'terminado'")
+  ).select(
       "ip.idItemPedido",
       "ip.descripcion",
       "ip.valor",
@@ -118,12 +129,13 @@ export const liquidarNomina = async (idEmpleado) => {
     .first();
 
   // Ítems pendientes del empleado con estado "Terminado"
-  const items = await db("itemPedido as ip")
-    .join("estado as est", "est.idEstado", "ip.idEstado")
-    .where("ip.idEmpleado", idEmpleado)
-    .where("ip.pagado", false)
-    .whereRaw("LOWER(est.nombre) = 'terminado'")
-    .select("ip.*");
+  const items = await excluirPedidosNoRealizados(
+    db("itemPedido as ip")
+      .join("estado as est", "est.idEstado", "ip.idEstado")
+      .where("ip.idEmpleado", idEmpleado)
+      .where("ip.pagado", false)
+      .whereRaw("LOWER(est.nombre) = 'terminado'")
+  ).select("ip.*");
 
   for (const item of items) {
     await db("itemPedido").where({ idItemPedido: item.idItemPedido }).update({ pagado: true });
@@ -166,11 +178,13 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
 
-  let entradasQuery = db("itemPedido as ip")
-    .join("estado as est", "est.idEstado", "ip.idEstado")
-    .whereNotNull("ip.idEmpleado")
-    .where("ip.pagado", false)
-    .whereRaw("LOWER(est.nombre) = 'terminado'")
+  let entradasQuery = excluirPedidosNoRealizados(
+    db("itemPedido as ip")
+      .join("estado as est", "est.idEstado", "ip.idEstado")
+      .whereNotNull("ip.idEmpleado")
+      .where("ip.pagado", false)
+      .whereRaw("LOWER(est.nombre) = 'terminado'")
+  )
     .groupBy("ip.idEmpleado")
     .select(
       "ip.idEmpleado",
