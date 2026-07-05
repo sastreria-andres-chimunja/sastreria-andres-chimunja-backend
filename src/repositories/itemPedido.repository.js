@@ -14,36 +14,48 @@ const formatItem = (item) =>
 
 // Sincroniza el estado del pedido según el estado de todos sus ítems.
 // Reglas: todos Entregado → pedido Entregado · todos Terminado → pedido Terminado
-//         si estaba en terminal y ya no cumple → vuelve a Asignado
+//         algún ítem Asignado/Terminado/Entregado (sin cumplir lo anterior) → Asignado
+//         ninguno de los anteriores → Pendiente
+// "No realizado" es manual (solo Admin) y nunca se toca desde acá.
 const sincronizarEstadoPedido = async (idItemPedido) => {
   const item = await db(TABLE).where({ idItemPedido }).first();
   if (!item) return;
 
-  const [estadoTerminado, estadoEntregado, estadoAsignado] = await Promise.all([
+  const pedido = await db("pedido").where({ idPedido: item.idPedido }).select("idEstado").first();
+  if (!pedido) return;
+
+  const [estadoPendiente, estadoAsignado, estadoTerminado, estadoEntregado, estadoNoRealizado] = await Promise.all([
+    db("estado").whereRaw("LOWER(nombre) = 'pendiente'").first(),
+    db("estado").whereRaw("LOWER(nombre) = 'asignado'").first(),
     db("estado").whereRaw("LOWER(nombre) = 'terminado'").first(),
     db("estado").whereRaw("LOWER(nombre) = 'entregado'").first(),
-    db("estado").whereRaw("LOWER(nombre) = 'asignado'").first(),
+    db("estado").whereRaw("LOWER(nombre) = 'no realizado'").first(),
   ]);
+
+  if (estadoNoRealizado && pedido.idEstado === estadoNoRealizado.idEstado) return;
 
   const items = await db(TABLE).where({ idPedido: item.idPedido }).select("idEstado");
   if (items.length === 0) return;
 
-  const pedido = await db("pedido").where({ idPedido: item.idPedido }).select("idEstado").first();
-  if (!pedido) return;
-
   const todosEntregado = estadoEntregado && items.every((i) => i.idEstado === estadoEntregado.idEstado);
   const todosTerminado = estadoTerminado && items.every((i) => i.idEstado === estadoTerminado.idEstado);
+  const algunoEnProceso = items.some((i) =>
+    [estadoAsignado?.idEstado, estadoTerminado?.idEstado, estadoEntregado?.idEstado].includes(i.idEstado)
+  );
 
+  let nuevoIdEstado = null;
   if (todosEntregado) {
-    await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: estadoEntregado.idEstado });
+    nuevoIdEstado = estadoEntregado.idEstado;
   } else if (todosTerminado) {
-    await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: estadoTerminado.idEstado });
-  } else {
-    // Si el pedido estaba en un estado terminal pero ya no todos los ítems lo cumplen → Asignado
-    const idsTerminales = [estadoTerminado?.idEstado, estadoEntregado?.idEstado].filter(Boolean);
-    if (estadoAsignado && idsTerminales.includes(pedido.idEstado)) {
-      await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: estadoAsignado.idEstado });
-    }
+    nuevoIdEstado = estadoTerminado.idEstado;
+  } else if (algunoEnProceso) {
+    nuevoIdEstado = estadoAsignado?.idEstado ?? null;
+  } else if (estadoPendiente) {
+    nuevoIdEstado = estadoPendiente.idEstado;
+  }
+
+  if (nuevoIdEstado != null && nuevoIdEstado !== pedido.idEstado) {
+    await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: nuevoIdEstado });
   }
 };
 
