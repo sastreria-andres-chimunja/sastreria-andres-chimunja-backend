@@ -6,6 +6,24 @@ const TABLE = "movimiento";
 const formatMovimiento = (m) =>
   m ? { ...m, fecha: formatFecha(m.fecha) } : null;
 
+// Resuelve el nombre del cliente cuando el movimiento referencia un pedido
+// (tipoReferencia='pedido', idReferencia=idPedido) o un ítem de pedido
+// (tipoReferencia='itemPedido', idReferencia=idItemPedido) — patrón FK
+// polimórfico de la tabla, así que se resuelve con subconsultas correlacionadas.
+const NOMBRE_CLIENTE_REFERENCIA = `(
+  SELECT cl.nombres || ' ' || cl.apellidos
+  FROM pedido p
+  JOIN cliente cl ON cl."idCliente" = p."idCliente"
+  WHERE p."idPedido" = "${TABLE}"."idReferencia" AND "${TABLE}"."tipoReferencia" = 'pedido'
+  UNION ALL
+  SELECT cl.nombres || ' ' || cl.apellidos
+  FROM "itemPedido" ip
+  JOIN pedido p ON p."idPedido" = ip."idPedido"
+  JOIN cliente cl ON cl."idCliente" = p."idCliente"
+  WHERE ip."idItemPedido" = "${TABLE}"."idReferencia" AND "${TABLE}"."tipoReferencia" = 'itemPedido'
+  LIMIT 1
+) as "nombreClienteReferencia"`;
+
 const RICH_QUERY = () =>
   db(TABLE)
     .leftJoin("tipoMovimiento as tm", "tm.idTipoMovimiento", `${TABLE}.idTipoMovimiento`)
@@ -15,7 +33,8 @@ const RICH_QUERY = () =>
       `${TABLE}.*`,
       "tm.nombreTipoMovimiento",
       "cm.nombreCategoriaMovimiento",
-      "mp.nombreMetodoPago"
+      "mp.nombreMetodoPago",
+      db.raw(NOMBRE_CLIENTE_REFERENCIA)
     );
 
 export const getMovimientoById = async (idMovimiento) => {
