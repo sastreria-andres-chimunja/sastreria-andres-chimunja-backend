@@ -64,11 +64,14 @@ const BASE_QUERY = () =>
     .leftJoin("empleado as emp", "emp.idEmpleado", `${TABLE}.idEmpleado`)
     .leftJoin("estado as e", "e.idEstado", `${TABLE}.idEstado`)
     .leftJoin("medidas as m", "m.idMedida", `${TABLE}.idMedida`)
+    .leftJoin("pedido as p", "p.idPedido", `${TABLE}.idPedido`)
+    .leftJoin("cliente as c", "c.idCliente", "p.idCliente")
     .select(
       `${TABLE}.*`,
       db.raw(`emp.nombres || ' ' || emp.apellidos as "nombreEmpleado"`),
       `e.nombre as nombreEstado`,
-      `m.tipoPrenda as tipoPrendaMedida`
+      `m.tipoPrenda as tipoPrendaMedida`,
+      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`)
     );
 
 export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
