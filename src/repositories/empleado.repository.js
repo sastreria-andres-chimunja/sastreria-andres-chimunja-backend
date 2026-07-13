@@ -43,3 +43,8 @@ export const updateEmpleado = async (idEmpleado, empleado) => {
 export const deleteEmpleado = async (idEmpleado) => {
   return db(TABLE).where({ idEmpleado }).del();
 };
+
+export const cambiarEstadoEmpleado = async (idEmpleado, activo) => {
+  await db(TABLE).where({ idEmpleado }).update({ activo });
+  return getEmpleadoById(idEmpleado);
+};

@@ -50,3 +50,15 @@ export const deleteEmpleado = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const cambiarEstadoEmpleado = async (req, res) => {
+  try {
+    const empleado = await empleadoService.cambiarEstadoEmpleado(
+      req.params.id,
+      req.body.activo,
+    );
+    res.json({ empleado });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

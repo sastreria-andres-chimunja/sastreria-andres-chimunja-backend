@@ -9,6 +9,7 @@ router.get("/:id", empleadoController.getEmpleadoById);
 router.post("/", empleadoController.createEmpleado);
 
 router.put("/:id", empleadoController.updateEmpleado);
+router.patch("/:id/estado", empleadoController.cambiarEstadoEmpleado);
 
 router.delete("/:id", empleadoController.deleteEmpleado);
 

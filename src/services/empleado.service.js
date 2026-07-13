@@ -33,3 +33,7 @@ export const updateEmpleado = async (id, data) => {
 export const deleteEmpleado = async (id) => {
   return empleadoRepository.deleteEmpleado(id);
 };
+
+export const cambiarEstadoEmpleado = async (id, activo) => {
+  return empleadoRepository.cambiarEstadoEmpleado(id, activo);
+};
