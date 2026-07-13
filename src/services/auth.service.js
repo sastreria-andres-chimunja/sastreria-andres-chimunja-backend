@@ -49,6 +49,10 @@ export const login = async (username, clave) => {
 
   const empleado = await getEmpleadoById(registro.idEmpleado);
 
+  if (empleado.activo === false) {
+    throw new Error("Tu usuario está inactivo. Contacta al administrador.");
+  }
+
   return { token, empleado, debeCambiarClave: registro.debeCambiarClave };
 };
 
