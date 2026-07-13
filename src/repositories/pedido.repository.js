@@ -18,11 +18,13 @@ const BASE_QUERY = () =>
   db(TABLE)
     .leftJoin("cliente as c", "c.idCliente", `${TABLE}.idCliente`)
     .leftJoin("estado as e", "e.idEstado", `${TABLE}.idEstado`)
+    .leftJoin("tipoPedido as tp", "tp.idTipoPedido", `${TABLE}.idTipoPedido`)
     .select(
       `${TABLE}.*`,
       db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
       `c.telefono as telefonoCliente`,
-      `e.nombre as nombreEstado`
+      `e.nombre as nombreEstado`,
+      `tp.nombre as nombreTipoPedido`
     );
 
 export const getPedidos = async (fechaInicio, fechaFin, idEmpleado) => {
@@ -54,6 +56,7 @@ export const createPedido = async (pedido) => {
   const data = {
     idCliente: pedido.idCliente,
     idEstado: pedido.idEstado,
+    idTipoPedido: pedido.idTipoPedido,
     valorTotal: pedido.valorTotal,
     fechaRecibido: parseFecha(pedido.fechaRecibido),
     fechaEntrega: parseFecha(pedido.fechaEntrega),
@@ -66,6 +69,7 @@ export const updatePedido = async (idPedido, pedido) => {
   const data = {
     idCliente: pedido.idCliente,
     idEstado: pedido.idEstado,
+    idTipoPedido: pedido.idTipoPedido,
     valorTotal: pedido.valorTotal,
     fechaRecibido: parseFecha(pedido.fechaRecibido),
     fechaEntrega: parseFecha(pedido.fechaEntrega),
