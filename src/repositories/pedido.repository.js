@@ -81,6 +81,25 @@ export const updatePedido = async (idPedido, pedido) => {
 export const deletePedido = async (idPedido) =>
   db(TABLE).where({ idPedido }).del();
 
+// ─── Límite diario de entregas ──────────────────────────────────────────────
+// Suma el valor total ya programado para una fecha de entrega, excluyendo
+// pedidos "No realizado" (no compiten por la capacidad de ese día) y,
+// opcionalmente, un pedido puntual (para revalidar al editar su propio monto).
+export const getValorProgramado = async (fechaEntrega, excluirIdPedido) => {
+  const fecha = parseFecha(fechaEntrega);
+  if (!fecha) return 0;
+
+  let query = db(TABLE)
+    .leftJoin("estado as e", "e.idEstado", `${TABLE}.idEstado`)
+    .where(`${TABLE}.fechaEntrega`, fecha)
+    .whereRaw(`(e.nombre IS NULL OR LOWER(e.nombre) <> 'no realizado')`);
+
+  if (excluirIdPedido) query = query.whereNot(`${TABLE}.idPedido`, excluirIdPedido);
+
+  const { total } = await query.sum({ total: `${TABLE}.valorTotal` }).first();
+  return Number(total) || 0;
+};
+
 // ─── Abonos de cliente a nivel de pedido ────────────────────────────────────
 export const getAbonosPedido = async (idPedido) => {
   const abonos = await db("movimiento as mv")

@@ -20,3 +20,6 @@ export const getAbonosPedido = async (idPedido) =>
 
 export const registrarAbonoPedido = async (idPedido, data) =>
   pedidoRepository.registrarAbonoPedido(idPedido, data);
+
+export const getValorProgramado = async (fechaEntrega, excluirIdPedido) =>
+  pedidoRepository.getValorProgramado(fechaEntrega, excluirIdPedido);

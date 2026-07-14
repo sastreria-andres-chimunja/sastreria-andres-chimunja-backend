@@ -68,3 +68,16 @@ export const registrarAbonoPedido = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const getValorProgramado = async (req, res) => {
+  try {
+    const { fecha, excluirIdPedido } = req.query;
+    const valorProgramado = await pedidoService.getValorProgramado(
+      fecha,
+      excluirIdPedido ? Number(excluirIdPedido) : undefined
+    );
+    res.json({ valorProgramado });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
