@@ -11,8 +11,17 @@ const formatPedido = (p) =>
         fechaEntrega: formatFecha(p.fechaEntrega),
         created_at: formatFecha(p.created_at),
         updated_at: formatFecha(p.updated_at),
+        totalAbonado: p.totalAbonado != null ? Number(p.totalAbonado) : 0,
       }
     : null;
+
+// Suma de abonos ya registrados para el pedido (tipoReferencia='pedido'),
+// como subconsulta correlacionada para no arrastrar duplicados por el JOIN.
+const TOTAL_ABONADO = `(
+  SELECT COALESCE(SUM(mv.valor), 0)
+  FROM movimiento mv
+  WHERE mv."tipoReferencia" = 'pedido' AND mv."idReferencia" = "${TABLE}"."idPedido"
+) as "totalAbonado"`;
 
 const BASE_QUERY = () =>
   db(TABLE)
@@ -24,7 +33,8 @@ const BASE_QUERY = () =>
       db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
       `c.telefono as telefonoCliente`,
       `e.nombre as nombreEstado`,
-      `tp.nombre as nombreTipoPedido`
+      `tp.nombre as nombreTipoPedido`,
+      db.raw(TOTAL_ABONADO)
     );
 
 export const getPedidos = async (fechaInicio, fechaFin, idEmpleado) => {
