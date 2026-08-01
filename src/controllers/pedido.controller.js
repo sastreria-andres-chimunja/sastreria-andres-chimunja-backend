@@ -1,4 +1,5 @@
 import * as pedidoService from "../services/pedido.service.js";
+import * as itemPedidoService from "../services/itemPedido.service.js";
 import { verificarTokenPedido } from "../utils/pedidoToken.utils.js";
 
 export const getPedidos = async (req, res) => {
@@ -41,6 +42,12 @@ export const getEstadoPublico = async (req, res) => {
     if (nombreEstado.includes("terminad")) estadoCliente = "terminado";
     else if (nombreEstado.includes("asignad")) estadoCliente = "asignado";
 
+    const items = await itemPedidoService.getItemsPedido(idPedido);
+    const totalItems = items.length;
+    const itemsTerminados = items.filter(
+      (it) => (it.nombreEstado || "").toLowerCase().includes("terminad")
+    ).length;
+
     res.json({
       estadoPublico: "ok",
       pedido: {
@@ -48,6 +55,8 @@ export const getEstadoPublico = async (req, res) => {
         nombreCliente: pedido.nombreCliente,
         nombreTipoPedido: pedido.nombreTipoPedido,
         fechaRecibido: pedido.fechaRecibido,
+        totalItems,
+        itemsTerminados,
         fechaEntrega: pedido.fechaEntrega,
         valorTotal: pedido.valorTotal,
         totalAbonado: pedido.totalAbonado,
