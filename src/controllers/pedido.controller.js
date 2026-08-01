@@ -1,4 +1,5 @@
 import * as pedidoService from "../services/pedido.service.js";
+import { verificarTokenPedido } from "../utils/pedidoToken.utils.js";
 
 export const getPedidos = async (req, res) => {
   try {
@@ -8,6 +9,51 @@ export const getPedidos = async (req, res) => {
       idEmpleado ? Number(idEmpleado) : undefined
     );
     res.json({ pedidos });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * GET /pedidos/publico/:token — vista pública sin login (link de WhatsApp).
+ * Al cliente solo le mostramos 3 estados posibles (pendiente/asignado/
+ * terminado); si el pedido ya está Entregado o marcado No realizado, no
+ * se expone ningún detalle (ni cliente, ni montos) — solo un aviso plano.
+ */
+export const getEstadoPublico = async (req, res) => {
+  try {
+    const idPedido = verificarTokenPedido(req.params.token);
+    if (!idPedido) return res.status(404).json({ error: "Enlace inválido" });
+
+    const pedido = await pedidoService.getPedidoById(idPedido);
+    if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+
+    const nombreEstado = (pedido.nombreEstado || "").toLowerCase();
+
+    if (nombreEstado.includes("entrega")) {
+      return res.json({ estadoPublico: "entregado" });
+    }
+    if (nombreEstado === "no realizado") {
+      return res.json({ estadoPublico: "no-realizado" });
+    }
+
+    let estadoCliente = "pendiente";
+    if (nombreEstado.includes("terminad")) estadoCliente = "terminado";
+    else if (nombreEstado.includes("asignad")) estadoCliente = "asignado";
+
+    res.json({
+      estadoPublico: "ok",
+      pedido: {
+        idPedido: pedido.idPedido,
+        nombreCliente: pedido.nombreCliente,
+        nombreTipoPedido: pedido.nombreTipoPedido,
+        fechaRecibido: pedido.fechaRecibido,
+        fechaEntrega: pedido.fechaEntrega,
+        valorTotal: pedido.valorTotal,
+        totalAbonado: pedido.totalAbonado,
+        estadoCliente,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

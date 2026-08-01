@@ -6,6 +6,7 @@ const router = Router();
 router.get("/", pedidoController.getPedidos);
 // Rutas específicas antes de /:id
 router.get("/valor-programado", pedidoController.getValorProgramado);
+router.get("/publico/:token", pedidoController.getEstadoPublico);
 router.get("/:id/abonos", pedidoController.getAbonosPedido);
 router.post("/:id/registrar-abono", pedidoController.registrarAbonoPedido);
 router.get("/:id", pedidoController.getPedidoById);

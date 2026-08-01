@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { generarTokenPedido } from "../utils/pedidoToken.utils.js";
 
 const TABLE = "pedido";
 
@@ -12,6 +13,7 @@ const formatPedido = (p) =>
         created_at: formatFecha(p.created_at),
         updated_at: formatFecha(p.updated_at),
         totalAbonado: p.totalAbonado != null ? Number(p.totalAbonado) : 0,
+        tokenPublico: generarTokenPedido(p.idPedido),
       }
     : null;
 
