@@ -20,6 +20,7 @@ import limiteDiarioRoutes from "./routes/limiteDiario.routes.js";
 import pedidoRoutes from "./routes/pedido.routes.js";
 import itemPedidoRoutes from "./routes/itemPedido.routes.js";
 import whatsappRoutes from "./routes/whatsapp.routes.js";
+import qzRoutes from "./routes/qz.routes.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,4 +66,5 @@ app.use("/limiteDiario", limiteDiarioRoutes);
 app.use("/pedidos", pedidoRoutes);
 app.use("/itemPedido", itemPedidoRoutes);
 app.use("/whatsapp", whatsappRoutes);
+app.use("/qz", qzRoutes);
 export default app;
