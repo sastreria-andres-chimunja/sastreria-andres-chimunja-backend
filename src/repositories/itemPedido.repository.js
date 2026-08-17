@@ -9,6 +9,38 @@ const getIdEstadoAuto = async (idEmpleado) => {
   return estado?.idEstado ?? null;
 };
 
+/**
+ * Calcula qué hacer con "fechaTerminado" al cambiar el idEstado de un ítem:
+ * - Si el nuevo estado es "Terminado" y el ítem no tenía ya una fecha
+ *   registrada, se sella con el momento actual (solo la PRIMERA vez que
+ *   pasa a Terminado -- si ya la tenía, no se pisa).
+ * - Si el nuevo estado NO es "Terminado" (p. ej. "Reabrir" lo vuelve a
+ *   Asignado), se limpia -- ya no es válida, y si se vuelve a marcar
+ *   Terminado más adelante debe tomar la fecha de esa nueva vez.
+ * - Si el estado nuevo es el mismo que ya tenía, no se toca nada
+ *   (undefined = omitir del update).
+ * Devuelve el valor a asignar a "fechaTerminado", o `undefined` si no hay
+ * que incluirlo en el update.
+ */
+const calcularFechaTerminado = async (idItemPedido, nuevoIdEstado) => {
+  const estadoTerminado = await db("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
+  if (!estadoTerminado) return undefined;
+
+  const actual = await db(TABLE).where({ idItemPedido }).select("idEstado", "fechaTerminado").first();
+  if (!actual || actual.idEstado === nuevoIdEstado) return undefined;
+
+  if (nuevoIdEstado === estadoTerminado.idEstado) {
+    // OJO: no usar db.fn.now() acá -- un Raw de knex es "thenable", y al
+    // devolverlo desde una función async, JS lo trata como una promesa y
+    // lo ejecuta de una vez como si fuera su propia consulta (rompe con
+    // "CURRENT_TIMESTAMP - error de sintaxis", confirmado en pruebas). Un
+    // Date de JS normal no tiene ese problema y knex lo mapea igual a
+    // timestamp.
+    return actual.fechaTerminado ? undefined : new Date();
+  }
+  return actual.fechaTerminado != null ? null : undefined;
+};
+
 const formatItem = (item) =>
   item ? { ...item, fechaEntrega: formatFecha(item.fechaEntrega) } : null;
 
@@ -118,6 +150,7 @@ export const updateItemPedido = async (idItemPedido, item) => {
   const idEstado = item.idEstado != null
     ? item.idEstado
     : await getIdEstadoAuto(idEmpleado);
+  const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado);
   const data = {
     idEmpleado,
     idEstado,
@@ -127,6 +160,7 @@ export const updateItemPedido = async (idItemPedido, item) => {
     descripcion: item.descripcion,
     observacion: item.observacion || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
+    ...(fechaTerminado !== undefined && { fechaTerminado }),
   };
   await db(TABLE).where({ idItemPedido }).update(data);
   await sincronizarEstadoPedido(idItemPedido);
@@ -134,7 +168,10 @@ export const updateItemPedido = async (idItemPedido, item) => {
 };
 
 export const cambiarEstadoItem = async (idItemPedido, idEstado) => {
-  await db(TABLE).where({ idItemPedido }).update({ idEstado });
+  const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado);
+  await db(TABLE)
+    .where({ idItemPedido })
+    .update({ idEstado, ...(fechaTerminado !== undefined && { fechaTerminado }) });
   await sincronizarEstadoPedido(idItemPedido);
   return getItemPedidoById(idItemPedido);
 };

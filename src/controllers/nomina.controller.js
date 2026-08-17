@@ -38,3 +38,14 @@ export const liquidarNomina = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const getFacturadoDiario = async (req, res) => {
+  try {
+    const { idEmpleado } = req.params;
+    const { fechaInicio, fechaFin } = req.query;
+    const facturado = await nominaService.getFacturadoDiario(Number(idEmpleado), fechaInicio, fechaFin);
+    res.json({ facturado });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

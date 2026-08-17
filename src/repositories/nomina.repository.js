@@ -12,6 +12,38 @@ const excluirPedidosNoRealizados = (query, aliasItem = "ip") =>
   );
 
 // ─────────────────────────────────────────────
+//  Facturado día a día (por fecha en que el ítem pasó a Terminado)
+// ─────────────────────────────────────────────
+// A diferencia de getNominaEmpleado (que filtra por fecha de entrega o por
+// fecha de pago), esto refleja cuándo el empleado REALMENTE completó el
+// trabajo -- fechaEntrega la fija el admin de antemano y puede no
+// coincidir con el día real de trabajo; la fecha de pago depende de
+// cuándo el admin liquida, que puede ser mucho después. Cuenta todo ítem
+// marcado Terminado en el rango, sin importar si ya se pagó o no --
+// "facturado" es el valor de trabajo completado, no lo efectivamente
+// cobrado. Ítems marcados Terminado antes de que existiera esta columna
+// no tienen fechaTerminado (no se fabricó una fecha retroactiva) y por
+// lo tanto no aparecen acá hasta que se toquen de nuevo.
+export const getFacturadoDiario = async (idEmpleado, fechaInicio, fechaFin) => {
+  const desde = parseFecha(fechaInicio);
+  const hasta = parseFecha(fechaFin);
+
+  let query = excluirPedidosNoRealizados(
+    db("itemPedido as ip").where("ip.idEmpleado", idEmpleado).whereNotNull("ip.fechaTerminado")
+  ).select("ip.idItemPedido", "ip.descripcion", "ip.valor", "ip.comisionEmpleado", "ip.fechaTerminado");
+  if (desde) query = query.where("ip.fechaTerminado", ">=", desde);
+  // "fechaTerminado" es timestamp -- "<" al día siguiente para incluir
+  // todo el día "hasta" completo (ver diaSiguiente()).
+  if (hasta) query = query.where("ip.fechaTerminado", "<", diaSiguiente(hasta));
+
+  const rows = await query.orderBy("ip.fechaTerminado", "desc");
+  return rows.map((r) => {
+    const valorEmpleado = Number(r.valor ?? 0) * Number(r.comisionEmpleado ?? 0) / 100;
+    return { ...r, fechaTerminado: formatFecha(r.fechaTerminado), valorEmpleado };
+  });
+};
+
+// ─────────────────────────────────────────────
 //  Nómina individual
 // ─────────────────────────────────────────────
 export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, historial = false) => {
