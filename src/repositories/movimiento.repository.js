@@ -1,5 +1,5 @@
 import db from "../config/database.js";
-import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { parseFecha, formatFecha, diaSiguiente } from "../utils/date.utils.js";
 
 const TABLE = "movimiento";
 
@@ -56,7 +56,9 @@ export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
 
   let query = RICH_QUERY().orderBy(`${TABLE}.fecha`, "desc");
   if (desde) query = query.where(`${TABLE}.fecha`, ">=", desde);
-  if (hasta) query = query.where(`${TABLE}.fecha`, "<=", hasta);
+  // "fecha" es timestamp (con hora) -- "<" al día siguiente incluye todo
+  // el día "hasta", no solo hasta medianoche (ver diaSiguiente()).
+  if (hasta) query = query.where(`${TABLE}.fecha`, "<", diaSiguiente(hasta));
 
   // Filtro por categoría lógica para los 3 tabs del frontend
   if (categoria === "pedidos") {

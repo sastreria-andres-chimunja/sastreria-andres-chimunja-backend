@@ -1,5 +1,5 @@
 import db from "../config/database.js";
-import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { parseFecha, formatFecha, diaSiguiente } from "../utils/date.utils.js";
 
 // Excluye ítems cuyo pedido esté marcado "No realizado" — esos pedidos no
 // deben contar para la nómina de ningún empleado.
@@ -31,7 +31,9 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
       .orderBy("m.fecha", "desc")
       .select("m.idMovimiento", "m.observacion", "m.valor", "m.fecha");
     if (desde) pagosQuery = pagosQuery.where("m.fecha", ">=", desde);
-    if (hasta) pagosQuery = pagosQuery.where("m.fecha", "<=", hasta);
+    // "m.fecha" es timestamp -- "<" al día siguiente para incluir todo el
+    // día "hasta" (ver diaSiguiente()), no solo hasta medianoche.
+    if (hasta) pagosQuery = pagosQuery.where("m.fecha", "<", diaSiguiente(hasta));
     const pagos = await pagosQuery;
 
     const pagosFormateados = pagos.map((p) => ({ ...p, fecha: formatFecha(p.fecha) }));
@@ -46,7 +48,7 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
       .orderBy("m.fecha", "desc")
       .select("m.idMovimiento", "m.fecha", "m.valor", "m.observacion", "m.liquidado", "tm.nombreTipoMovimiento");
     if (desde) abonosQuery = abonosQuery.where("m.fecha", ">=", desde);
-    if (hasta) abonosQuery = abonosQuery.where("m.fecha", "<=", hasta);
+    if (hasta) abonosQuery = abonosQuery.where("m.fecha", "<", diaSiguiente(hasta));
     const abonos = await abonosQuery;
 
     const abonosFormateados = abonos.map((a) => ({ ...a, fecha: formatFecha(a.fecha) }));
@@ -101,7 +103,7 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
     .where("m.liquidado", false)
     .select("m.idMovimiento", "m.fecha", "m.valor", "m.observacion", "tm.nombreTipoMovimiento");
   if (desde) abonosQuery = abonosQuery.where("m.fecha", ">=", desde);
-  if (hasta) abonosQuery = abonosQuery.where("m.fecha", "<=", hasta);
+  if (hasta) abonosQuery = abonosQuery.where("m.fecha", "<", diaSiguiente(hasta));
   const abonos = await abonosQuery;
 
   const abonosFormateados = abonos.map((a) => ({ ...a, fecha: formatFecha(a.fecha) }));
@@ -205,7 +207,7 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
       db.raw('COALESCE(SUM(m.valor), 0) as "totalSalidas"')
     );
   if (desde) salidasQuery = salidasQuery.where("m.fecha", ">=", desde);
-  if (hasta) salidasQuery = salidasQuery.where("m.fecha", "<=", hasta);
+  if (hasta) salidasQuery = salidasQuery.where("m.fecha", "<", diaSiguiente(hasta));
   const salidasRows = await salidasQuery;
 
   const entradasMap = Object.fromEntries(entradasRows.map((r) => [r.idEmpleado, Number(r.totalEntradas)]));

@@ -12,6 +12,23 @@ export function parseFecha(ddMmYyyy) {
 }
 
 /**
+ * Dado un "yyyy-mm-dd" (típicamente el resultado de parseFecha para el
+ * extremo "hasta" de un rango), devuelve el día siguiente en el mismo
+ * formato — para usar con comparación "<" (exclusiva) en vez de "<=" al
+ * filtrar columnas `timestamp` (con hora), donde "<= 'yyyy-mm-dd'" en
+ * Postgres se interpreta como "<= yyyy-mm-dd 00:00:00" y termina
+ * excluyendo silenciosamente casi todos los registros del propio día
+ * "hasta" (cualquier hora después de medianoche). No hace falta para
+ * columnas `date` (sin hora), donde "<=" ya es exacto.
+ */
+export function diaSiguiente(yyyyMmDd) {
+  if (!yyyyMmDd) return null;
+  const [anio, mes, dia] = yyyyMmDd.split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia + 1));
+  return `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, "0")}-${String(fecha.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
  * Formatea una fecha de PostgreSQL a "dd/mm/yyyy".
  * - Columnas `date` → pg las devuelve como string "yyyy-mm-dd"
  * - Columnas `timestamp` → pg las devuelve como objeto Date
