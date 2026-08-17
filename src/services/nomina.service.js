@@ -12,6 +12,6 @@ export const liquidarNomina = async (idEmpleado) => {
   return nominaRepository.liquidarNomina(idEmpleado);
 };
 
-export const getFacturadoDiario = async (idEmpleado, fechaInicio, fechaFin) => {
-  return nominaRepository.getFacturadoDiario(idEmpleado, fechaInicio, fechaFin);
+export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
+  return nominaRepository.getResumenPeriodo(idEmpleado, fechaInicio, fechaFin);
 };

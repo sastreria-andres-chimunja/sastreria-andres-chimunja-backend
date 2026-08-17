@@ -12,35 +12,70 @@ const excluirPedidosNoRealizados = (query, aliasItem = "ip") =>
   );
 
 // ─────────────────────────────────────────────
-//  Facturado día a día (por fecha en que el ítem pasó a Terminado)
+//  Resumen por período (por fecha en que el ítem pasó a Terminado)
 // ─────────────────────────────────────────────
-// A diferencia de getNominaEmpleado (que filtra por fecha de entrega o por
-// fecha de pago), esto refleja cuándo el empleado REALMENTE completó el
-// trabajo -- fechaEntrega la fija el admin de antemano y puede no
-// coincidir con el día real de trabajo; la fecha de pago depende de
-// cuándo el admin liquida, que puede ser mucho después. Cuenta todo ítem
-// marcado Terminado en el rango, sin importar si ya se pagó o no --
-// "facturado" es el valor de trabajo completado, no lo efectivamente
-// cobrado. Ítems marcados Terminado antes de que existiera esta columna
-// no tienen fechaTerminado (no se fabricó una fecha retroactiva) y por
-// lo tanto no aparecen acá hasta que se toquen de nuevo.
-export const getFacturadoDiario = async (idEmpleado, fechaInicio, fechaFin) => {
+// A diferencia del modo "normal" de getNominaEmpleado (que filtra por
+// fecha de entrega) o su modo "historial" (que filtra por fecha de pago),
+// esto refleja cuándo el empleado REALMENTE completó el trabajo --
+// fechaEntrega la fija el admin de antemano y puede no coincidir con el
+// día real de trabajo; la fecha de pago depende de cuándo el admin
+// liquida, que puede ser mucho después. Es la única vista donde
+// "Facturado", "Pendiente de pago" y "Saldo" están genuinamente atados al
+// mismo filtro de fecha (antes eran dos filtros distintos sin relación,
+// lo que confundía -- un ítem podía "desaparecer" de un número sin
+// desaparecer del otro). Ítems marcados Terminado antes de que existiera
+// la columna fechaTerminado no tienen fecha (no se fabricó una fecha
+// retroactiva) y por lo tanto no aparecen acá hasta que se toquen de nuevo.
+export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
 
-  let query = excluirPedidosNoRealizados(
+  let itemsQuery = excluirPedidosNoRealizados(
     db("itemPedido as ip").where("ip.idEmpleado", idEmpleado).whereNotNull("ip.fechaTerminado")
-  ).select("ip.idItemPedido", "ip.descripcion", "ip.valor", "ip.comisionEmpleado", "ip.fechaTerminado");
-  if (desde) query = query.where("ip.fechaTerminado", ">=", desde);
+  ).select(
+    "ip.idItemPedido", "ip.idPedido", "ip.descripcion", "ip.valor",
+    "ip.comisionEmpleado", "ip.fechaTerminado", "ip.pagado"
+  );
+  if (desde) itemsQuery = itemsQuery.where("ip.fechaTerminado", ">=", desde);
   // "fechaTerminado" es timestamp -- "<" al día siguiente para incluir
   // todo el día "hasta" completo (ver diaSiguiente()).
-  if (hasta) query = query.where("ip.fechaTerminado", "<", diaSiguiente(hasta));
+  if (hasta) itemsQuery = itemsQuery.where("ip.fechaTerminado", "<", diaSiguiente(hasta));
+  const items = await itemsQuery.orderBy("ip.fechaTerminado", "desc");
 
-  const rows = await query.orderBy("ip.fechaTerminado", "desc");
-  return rows.map((r) => {
-    const valorEmpleado = Number(r.valor ?? 0) * Number(r.comisionEmpleado ?? 0) / 100;
-    return { ...r, fechaTerminado: formatFecha(r.fechaTerminado), valorEmpleado };
+  const itemsFormateados = items.map((i) => {
+    const valorEmpleado = Number(i.valor ?? 0) * Number(i.comisionEmpleado ?? 0) / 100;
+    return { ...i, fechaTerminado: formatFecha(i.fechaTerminado), valorEmpleado };
   });
+
+  const pendientes = itemsFormateados.filter((i) => !i.pagado);
+  const pagados = itemsFormateados.filter((i) => i.pagado);
+  const facturado = itemsFormateados.reduce((s, i) => s + i.valorEmpleado, 0);
+  const totalPendiente = pendientes.reduce((s, i) => s + i.valorEmpleado, 0);
+  const totalPagadoItems = pagados.reduce((s, i) => s + i.valorEmpleado, 0);
+
+  // Abonos (adelantos) fechados dentro del mismo período.
+  let abonosQuery = db("movimiento as m")
+    .join("tipoMovimiento as tm", "tm.idTipoMovimiento", "m.idTipoMovimiento")
+    .whereIn("m.tipoReferencia", ["Nómina", "empleado"])
+    .where("m.idReferencia", idEmpleado)
+    .where("m.idTipoMovimiento", 2)
+    .select("m.idMovimiento", "m.fecha", "m.valor", "m.observacion", "tm.nombreTipoMovimiento");
+  if (desde) abonosQuery = abonosQuery.where("m.fecha", ">=", desde);
+  if (hasta) abonosQuery = abonosQuery.where("m.fecha", "<", diaSiguiente(hasta));
+  const abonos = await abonosQuery.orderBy("m.fecha", "desc");
+  const abonosFormateados = abonos.map((a) => ({ ...a, fecha: formatFecha(a.fecha) }));
+  const totalAbonos = abonosFormateados.reduce((s, a) => s + Number(a.valor ?? 0), 0);
+
+  return {
+    pendientes,
+    pagados,
+    abonos: abonosFormateados,
+    facturado,
+    totalPendiente,
+    totalPagadoItems,
+    totalAbonos,
+    saldo: totalPendiente - totalAbonos,
+  };
 };
 
 // ─────────────────────────────────────────────

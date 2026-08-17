@@ -39,12 +39,12 @@ export const liquidarNomina = async (req, res) => {
   }
 };
 
-export const getFacturadoDiario = async (req, res) => {
+export const getResumenPeriodo = async (req, res) => {
   try {
     const { idEmpleado } = req.params;
     const { fechaInicio, fechaFin } = req.query;
-    const facturado = await nominaService.getFacturadoDiario(Number(idEmpleado), fechaInicio, fechaFin);
-    res.json({ facturado });
+    const resumen = await nominaService.getResumenPeriodo(Number(idEmpleado), fechaInicio, fechaFin);
+    res.json({ resumen });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -5,7 +5,7 @@ const router = Router();
 
 router.get("/", nominaController.getNominaGeneral);
 router.post("/:idEmpleado/liquidar", nominaController.liquidarNomina);
-router.get("/:idEmpleado/facturado", nominaController.getFacturadoDiario);
+router.get("/:idEmpleado/periodo", nominaController.getResumenPeriodo);
 router.get("/:idEmpleado", nominaController.getNominaEmpleado);
 
 export default router;
