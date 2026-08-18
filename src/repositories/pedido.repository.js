@@ -13,6 +13,8 @@ const formatPedido = (p) =>
         created_at: formatFecha(p.created_at),
         updated_at: formatFecha(p.updated_at),
         totalAbonado: p.totalAbonado != null ? Number(p.totalAbonado) : 0,
+        totalItems: p.totalItems != null ? Number(p.totalItems) : 0,
+        itemsTerminados: p.itemsTerminados != null ? Number(p.itemsTerminados) : 0,
         tokenPublico: generarTokenPedido(p.idPedido),
       }
     : null;
@@ -25,6 +27,20 @@ const TOTAL_ABONADO = `(
   WHERE mv."tipoReferencia" = 'pedido' AND mv."idReferencia" = "${TABLE}"."idPedido"
 ) as "totalAbonado"`;
 
+// Cantidad de ítems del pedido y cuántos ya están Terminado o Entregado
+// (ambos cuentan como "trabajo terminado" -- Entregado es simplemente un
+// paso más allá de Terminado) -- para mostrar "X/Y ítems terminados" en
+// la tarjeta sin tener que traer cada ítem completo.
+const TOTAL_ITEMS = `(
+  SELECT COUNT(*) FROM "itemPedido" ip WHERE ip."idPedido" = "${TABLE}"."idPedido"
+) as "totalItems"`;
+
+const ITEMS_TERMINADOS = `(
+  SELECT COUNT(*) FROM "itemPedido" ip
+  JOIN estado e2 ON e2."idEstado" = ip."idEstado"
+  WHERE ip."idPedido" = "${TABLE}"."idPedido" AND LOWER(e2.nombre) IN ('terminado', 'entregado')
+) as "itemsTerminados"`;
+
 const BASE_QUERY = () =>
   db(TABLE)
     .leftJoin("cliente as c", "c.idCliente", `${TABLE}.idCliente`)
@@ -36,7 +52,9 @@ const BASE_QUERY = () =>
       `c.telefono as telefonoCliente`,
       `e.nombre as nombreEstado`,
       `tp.nombre as nombreTipoPedido`,
-      db.raw(TOTAL_ABONADO)
+      db.raw(TOTAL_ABONADO),
+      db.raw(TOTAL_ITEMS),
+      db.raw(ITEMS_TERMINADOS)
     );
 
 export const getPedidos = async (fechaInicio, fechaFin, idEmpleado) => {
