@@ -103,7 +103,8 @@ const BASE_QUERY = () =>
       db.raw(`emp.nombres || ' ' || emp.apellidos as "nombreEmpleado"`),
       `e.nombre as nombreEstado`,
       `m.tipoPrenda as tipoPrendaMedida`,
-      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`)
+      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
+      `c.telefono as telefonoCliente`
     );
 
 export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
