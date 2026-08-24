@@ -61,6 +61,19 @@ const EMPLEADO_ASIGNADO = `(
   WHERE ip."idPedido" = "${TABLE}"."idPedido"
 ) as "empleadoAsignado"`;
 
+// Fotos de referencia de TODOS los ítems del pedido, juntas en un solo
+// arreglo (para la tarjeta de "Hoja de trabajo": mostrar si tiene o no
+// fotos, y poder ampliarlas, sin tener que abrir cada ítem por separado).
+const FOTOS_PEDIDO = `(
+  SELECT COALESCE(
+    json_agg(json_build_object('idImagen', img."idImagen", 'rutaImagen', img."rutaImagen") ORDER BY img."idImagen"),
+    '[]'
+  )
+  FROM imagenes img
+  JOIN "itemPedido" ip2 ON ip2."idItemPedido" = img."idReferencia" AND img."tipoReferencia" = 'itemPedido'
+  WHERE ip2."idPedido" = "${TABLE}"."idPedido"
+) as "fotos"`;
+
 const BASE_QUERY = () =>
   db(TABLE)
     .leftJoin("cliente as c", "c.idCliente", `${TABLE}.idCliente`)
@@ -75,7 +88,8 @@ const BASE_QUERY = () =>
       db.raw(TOTAL_ABONADO),
       db.raw(TOTAL_ITEMS),
       db.raw(ITEMS_TERMINADOS),
-      db.raw(EMPLEADO_ASIGNADO)
+      db.raw(EMPLEADO_ASIGNADO),
+      db.raw(FOTOS_PEDIDO)
     );
 
 /**
