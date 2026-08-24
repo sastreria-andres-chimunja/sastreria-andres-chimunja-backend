@@ -24,8 +24,8 @@ export const getPagosItem = async (idItemPedido) =>
 export const registrarPago = async (idItemPedido, pagoData) =>
   itemPedidoRepository.registrarPago(idItemPedido, pagoData);
 
-export const cambiarEstadoItem = async (idItemPedido, idEstado) =>
-  itemPedidoRepository.cambiarEstadoItem(idItemPedido, idEstado);
+export const cambiarEstadoItem = async (idItemPedido, idEstado, idMetodoPago) =>
+  itemPedidoRepository.cambiarEstadoItem(idItemPedido, idEstado, idMetodoPago);
 
 export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) =>
   itemPedidoRepository.asignarEmpleadoItem(idItemPedido, idEmpleado);

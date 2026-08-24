@@ -35,11 +35,11 @@ const getIdEstadoAuto = async (idEmpleado) => {
  * Devuelve el valor a asignar a "fechaTerminado", o `undefined` si no hay
  * que incluirlo en el update.
  */
-const calcularFechaTerminado = async (idItemPedido, nuevoIdEstado) => {
-  const estadoTerminado = await db("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
+const calcularFechaTerminado = async (idItemPedido, nuevoIdEstado, qb = db) => {
+  const estadoTerminado = await qb("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
   if (!estadoTerminado) return undefined;
 
-  const actual = await db(TABLE).where({ idItemPedido }).select("idEstado", "fechaTerminado").first();
+  const actual = await qb(TABLE).where({ idItemPedido }).select("idEstado", "fechaTerminado").first();
   if (!actual || actual.idEstado === nuevoIdEstado) return undefined;
 
   if (nuevoIdEstado === estadoTerminado.idEstado) {
@@ -62,24 +62,32 @@ const formatItem = (item) =>
 //         algún ítem Asignado/Terminado/Entregado (sin cumplir lo anterior) → Asignado
 //         ninguno de los anteriores → Pendiente
 // "No realizado" es manual (solo Admin) y nunca se toca desde acá.
-const sincronizarEstadoPedido = async (idItemPedido) => {
-  const item = await db(TABLE).where({ idItemPedido }).first();
+// `idMetodoPago`/`trx`: ver nota en manejarCambioEstadoPedido() -- si este
+// cambio completa el pedido a "Entregado" con saldo pendiente, hace falta
+// el método de pago o se lanza un error (que revierte TODO lo de la
+// transacción `trx`, incluyendo el update del ítem que disparó esto).
+const sincronizarEstadoPedido = async (idItemPedido, idMetodoPago, trx = db) => {
+  const item = await trx(TABLE).where({ idItemPedido }).first();
   if (!item) return { consolidado: false };
 
-  const pedido = await db("pedido").where({ idPedido: item.idPedido }).select("idEstado").first();
+  const pedido = await trx("pedido").where({ idPedido: item.idPedido }).select("idEstado").first();
   if (!pedido) return { consolidado: false };
 
-  const [estadoPendiente, estadoAsignado, estadoTerminado, estadoEntregado, estadoNoRealizado] = await Promise.all([
-    db("estado").whereRaw("LOWER(nombre) = 'pendiente'").first(),
-    db("estado").whereRaw("LOWER(nombre) = 'asignado'").first(),
-    db("estado").whereRaw("LOWER(nombre) = 'terminado'").first(),
-    db("estado").whereRaw("LOWER(nombre) = 'entregado'").first(),
-    db("estado").whereRaw("LOWER(nombre) = 'no realizado'").first(),
-  ]);
+  // OJO: secuencial, no Promise.all -- `trx` es una única conexión (a
+  // diferencia de `db`, que es un pool), así que lanzar varias consultas en
+  // paralelo sobre la misma transacción genera "client.query() called while
+  // already executing" (confirmado en pruebas; deprecado en pg, se quitará
+  // en pg@9). Antes de meter esto en una transacción usaba `db` normal y sí
+  // era seguro en paralelo -- ya no.
+  const estadoPendiente = await trx("estado").whereRaw("LOWER(nombre) = 'pendiente'").first();
+  const estadoAsignado = await trx("estado").whereRaw("LOWER(nombre) = 'asignado'").first();
+  const estadoTerminado = await trx("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
+  const estadoEntregado = await trx("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
+  const estadoNoRealizado = await trx("estado").whereRaw("LOWER(nombre) = 'no realizado'").first();
 
   if (estadoNoRealizado && pedido.idEstado === estadoNoRealizado.idEstado) return { consolidado: false };
 
-  const items = await db(TABLE).where({ idPedido: item.idPedido }).select("idEstado");
+  const items = await trx(TABLE).where({ idPedido: item.idPedido }).select("idEstado");
   if (items.length === 0) return { consolidado: false };
 
   const todosEntregado = estadoEntregado && items.every((i) => i.idEstado === estadoEntregado.idEstado);
@@ -100,17 +108,20 @@ const sincronizarEstadoPedido = async (idItemPedido) => {
   }
 
   if (nuevoIdEstado != null && nuevoIdEstado !== pedido.idEstado) {
-    await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: nuevoIdEstado });
+    await trx("pedido").where({ idPedido: item.idPedido }).update({ idEstado: nuevoIdEstado });
     // Consolida/revierte el saldo automático si el pedido entra o sale de
     // "Entregado" (ver manejarCambioEstadoPedido() en pedido.repository.js).
-    return manejarCambioEstadoPedido(item.idPedido, pedido.idEstado, nuevoIdEstado);
+    return manejarCambioEstadoPedido(item.idPedido, pedido.idEstado, nuevoIdEstado, idMetodoPago, trx);
   }
 
   return { consolidado: false };
 };
 
-const BASE_QUERY = () =>
-  db(TABLE)
+// `qb` opcional -- ver misma nota en pedido.repository.js: los llamadores
+// dentro de una transacción activa (updateItemPedido, etc) pasan `trx` para
+// leer el ítem recién escrito antes del commit.
+const BASE_QUERY = (qb = db) =>
+  qb(TABLE)
     .leftJoin("empleado as emp", "emp.idEmpleado", `${TABLE}.idEmpleado`)
     .leftJoin("estado as e", "e.idEstado", `${TABLE}.idEstado`)
     .leftJoin("medidas as m", "m.idMedida", `${TABLE}.idMedida`)
@@ -118,12 +129,12 @@ const BASE_QUERY = () =>
     .leftJoin("cliente as c", "c.idCliente", "p.idCliente")
     .select(
       `${TABLE}.*`,
-      db.raw(`emp.nombres || ' ' || emp.apellidos as "nombreEmpleado"`),
+      qb.raw(`emp.nombres || ' ' || emp.apellidos as "nombreEmpleado"`),
       `e.nombre as nombreEstado`,
       `m.tipoPrenda as tipoPrendaMedida`,
-      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
+      qb.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
       `c.telefono as telefonoCliente`,
-      db.raw(FOTOS_ITEM)
+      qb.raw(FOTOS_ITEM)
     );
 
 export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
@@ -145,8 +156,8 @@ export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado
   return items.map(formatItem);
 };
 
-export const getItemPedidoById = async (idItemPedido) => {
-  const item = await BASE_QUERY()
+export const getItemPedidoById = async (idItemPedido, qb = db) => {
+  const item = await BASE_QUERY(qb)
     .where({ [`${TABLE}.idItemPedido`]: idItemPedido })
     .first();
   return formatItem(item);
@@ -166,48 +177,67 @@ export const createItemPedido = async (item) => {
     fechaEntrega: parseFecha(item.fechaEntrega),
     pagado: false,
   };
-  const [newItem] = await db(TABLE).insert(data).returning("*");
-  const consolidacion = await sincronizarEstadoPedido(newItem.idItemPedido);
-  return { item: await getItemPedidoById(newItem.idItemPedido), consolidacion };
+  // Un ítem recién creado nunca nace en "Entregado" (siempre arranca en
+  // Pendiente/Asignado), así que esto nunca puede disparar el error de
+  // "falta método de pago" -- igual va en transacción por consistencia.
+  return db.transaction(async (trx) => {
+    const [newItem] = await trx(TABLE).insert(data).returning("*");
+    const consolidacion = await sincronizarEstadoPedido(newItem.idItemPedido, undefined, trx);
+    return { item: await getItemPedidoById(newItem.idItemPedido, trx), consolidacion };
+  });
 };
 
 export const updateItemPedido = async (idItemPedido, item) => {
-  const idEmpleado = item.idEmpleado || null;
-  // Respetar idEstado si viene explícitamente; si no, calcular automático
-  const idEstado = item.idEstado != null
-    ? item.idEstado
-    : await getIdEstadoAuto(idEmpleado);
-  const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado);
-  const data = {
-    idEmpleado,
-    idEstado,
-    idMedida: item.idMedida || null,
-    valor: item.valor,
-    comisionEmpleado: item.comisionEmpleado ?? 0,
-    descripcion: item.descripcion,
-    observacion: item.observacion || null,
-    fechaEntrega: parseFecha(item.fechaEntrega),
-    ...(fechaTerminado !== undefined && { fechaTerminado }),
-  };
-  await db(TABLE).where({ idItemPedido }).update(data);
-  const consolidacion = await sincronizarEstadoPedido(idItemPedido);
-  return { item: await getItemPedidoById(idItemPedido), consolidacion };
+  // Todo en una sola transacción: si este cambio completa el pedido a
+  // "Entregado" con saldo pendiente y falta item.idMetodoPago,
+  // sincronizarEstadoPedido()/manejarCambioEstadoPedido() lanzan un error y
+  // ACÁ se revierte también el update del ítem de abajo (nunca queda el
+  // ítem cambiado pero el pedido a medias).
+  return db.transaction(async (trx) => {
+    const idEmpleado = item.idEmpleado || null;
+    // Respetar idEstado si viene explícitamente; si no, calcular automático
+    const idEstado = item.idEstado != null
+      ? item.idEstado
+      : await getIdEstadoAuto(idEmpleado);
+    const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado, trx);
+    const data = {
+      idEmpleado,
+      idEstado,
+      idMedida: item.idMedida || null,
+      valor: item.valor,
+      comisionEmpleado: item.comisionEmpleado ?? 0,
+      descripcion: item.descripcion,
+      observacion: item.observacion || null,
+      fechaEntrega: parseFecha(item.fechaEntrega),
+      ...(fechaTerminado !== undefined && { fechaTerminado }),
+    };
+    await trx(TABLE).where({ idItemPedido }).update(data);
+    const consolidacion = await sincronizarEstadoPedido(idItemPedido, item.idMetodoPago, trx);
+    return { item: await getItemPedidoById(idItemPedido, trx), consolidacion };
+  });
 };
 
-export const cambiarEstadoItem = async (idItemPedido, idEstado) => {
-  const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado);
-  await db(TABLE)
-    .where({ idItemPedido })
-    .update({ idEstado, ...(fechaTerminado !== undefined && { fechaTerminado }) });
-  const consolidacion = await sincronizarEstadoPedido(idItemPedido);
-  return { item: await getItemPedidoById(idItemPedido), consolidacion };
+export const cambiarEstadoItem = async (idItemPedido, idEstado, idMetodoPago) => {
+  return db.transaction(async (trx) => {
+    const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado, trx);
+    await trx(TABLE)
+      .where({ idItemPedido })
+      .update({ idEstado, ...(fechaTerminado !== undefined && { fechaTerminado }) });
+    const consolidacion = await sincronizarEstadoPedido(idItemPedido, idMetodoPago, trx);
+    return { item: await getItemPedidoById(idItemPedido, trx), consolidacion };
+  });
 };
 
 export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) => {
-  const idEstado = await getIdEstadoAuto(idEmpleado);
-  await db(TABLE).where({ idItemPedido }).update({ idEmpleado, idEstado });
-  const consolidacion = await sincronizarEstadoPedido(idItemPedido);
-  return { item: await getItemPedidoById(idItemPedido), consolidacion };
+  // Asignar/desasignar empleado solo mueve el ítem entre Pendiente/Asignado
+  // (getIdEstadoAuto), nunca a Entregado -- no puede disparar el error de
+  // "falta método de pago", pero igual va en transacción por consistencia.
+  return db.transaction(async (trx) => {
+    const idEstado = await getIdEstadoAuto(idEmpleado);
+    await trx(TABLE).where({ idItemPedido }).update({ idEmpleado, idEstado });
+    const consolidacion = await sincronizarEstadoPedido(idItemPedido, undefined, trx);
+    return { item: await getItemPedidoById(idItemPedido, trx), consolidacion };
+  });
 };
 
 export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) => {

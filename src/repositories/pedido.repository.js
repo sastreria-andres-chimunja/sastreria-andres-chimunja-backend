@@ -74,22 +74,26 @@ const FOTOS_PEDIDO = `(
   WHERE ip2."idPedido" = "${TABLE}"."idPedido"
 ) as "fotos"`;
 
-const BASE_QUERY = () =>
-  db(TABLE)
+// `qb` es opcional -- normalmente `db`, pero updatePedido() lo llama con la
+// transacción activa (`trx`) para leer el pedido recién actualizado ANTES
+// de que la transacción haga commit (con `db` a secas, en otra conexión,
+// todavía no vería los cambios).
+const BASE_QUERY = (qb = db) =>
+  qb(TABLE)
     .leftJoin("cliente as c", "c.idCliente", `${TABLE}.idCliente`)
     .leftJoin("estado as e", "e.idEstado", `${TABLE}.idEstado`)
     .leftJoin("tipoPedido as tp", "tp.idTipoPedido", `${TABLE}.idTipoPedido`)
     .select(
       `${TABLE}.*`,
-      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
+      qb.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
       `c.telefono as telefonoCliente`,
       `e.nombre as nombreEstado`,
       `tp.nombre as nombreTipoPedido`,
-      db.raw(TOTAL_ABONADO),
-      db.raw(TOTAL_ITEMS),
-      db.raw(ITEMS_TERMINADOS),
-      db.raw(EMPLEADO_ASIGNADO),
-      db.raw(FOTOS_PEDIDO)
+      qb.raw(TOTAL_ABONADO),
+      qb.raw(TOTAL_ITEMS),
+      qb.raw(ITEMS_TERMINADOS),
+      qb.raw(EMPLEADO_ASIGNADO),
+      qb.raw(FOTOS_PEDIDO)
     );
 
 /**
@@ -99,43 +103,54 @@ const BASE_QUERY = () =>
  * manual de "Estado del pedido" en updatePedido() acá mismo):
  * - Si el nuevo estado es "Entregado" y antes no lo era: consolida el
  *   saldo pendiente (valorTotal - abonado) en un abono automático
- *   (movimiento.autoGenerado=true) y sella fechaEntregado -- así no hace
- *   falta registrar un abono aparte por lo que quede pendiente al
- *   entregar.
+ *   (movimiento.autoGenerado=true) y sella fechaEntregado. Si queda saldo
+ *   pendiente, se REQUIERE `idMetodoPago` -- el frontend siempre debe
+ *   preguntarle al usuario el método de pago antes de mandar el cambio de
+ *   estado (con opción de cancelar); si de todos modos llega sin método,
+ *   se lanza un error en vez de generar el abono con método nulo.
  * - Si el estado ANTERIOR era "Entregado" y el nuevo ya no lo es: revierte
  *   -- borra ese abono automático (si existe) y limpia fechaEntregado.
+ * `trx` es la transacción activa del llamador (updatePedido() acá, o
+ * updateItemPedido()/etc en itemPedido.repository.js) -- TODO pasa por la
+ * misma transacción para que, si esta función lanza el error de "falta
+ * método de pago", el cambio de estado que el llamador ya había escrito
+ * también se revierta (el pedido nunca queda a medio camino).
  * Devuelve { consolidado, monto? } para que el llamador pueda avisarle al
  * usuario si se generó un abono automático.
  */
-export const manejarCambioEstadoPedido = async (idPedido, idEstadoAnterior, idEstadoNuevo) => {
+export const manejarCambioEstadoPedido = async (idPedido, idEstadoAnterior, idEstadoNuevo, idMetodoPago, trx = db) => {
   if (idEstadoAnterior === idEstadoNuevo) return { consolidado: false };
 
-  const estadoEntregado = await db("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
+  const estadoEntregado = await trx("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
   if (!estadoEntregado) return { consolidado: false };
 
   if (idEstadoNuevo === estadoEntregado.idEstado && idEstadoAnterior !== estadoEntregado.idEstado) {
-    const pedido = await db(TABLE).where({ idPedido }).first();
+    const pedido = await trx(TABLE).where({ idPedido }).first();
     if (!pedido) return { consolidado: false };
 
-    await db(TABLE).where({ idPedido }).update({ fechaEntregado: new Date() });
-
-    const abonos = await db("movimiento")
+    const abonos = await trx("movimiento")
       .where({ tipoReferencia: "pedido", idReferencia: idPedido })
       .select("valor");
     const totalAbonado = abonos.reduce((s, a) => s + Number(a.valor ?? 0), 0);
     const saldo = Number(pedido.valorTotal ?? 0) - totalAbonado;
 
+    if (saldo > 0.01 && !idMetodoPago) {
+      throw new Error("Selecciona el método de pago del saldo pendiente antes de marcar el pedido como Entregado.");
+    }
+
+    await trx(TABLE).where({ idPedido }).update({ fechaEntregado: new Date() });
+
     if (saldo > 0.01) {
-      const tipoEntrada = await db("tipoMovimiento")
+      const tipoEntrada = await trx("tipoMovimiento")
         .whereRaw("LOWER(\"nombreTipoMovimiento\") like '%ingreso%'")
         .first();
-      const catPago = await db("categoriaMovimiento")
+      const catPago = await trx("categoriaMovimiento")
         .whereRaw("LOWER(\"nombreCategoriaMovimiento\") like '%venta%'")
         .first();
-      await db("movimiento").insert({
+      await trx("movimiento").insert({
         idTipoMovimiento: tipoEntrada?.idTipoMovimiento ?? 1,
         idCategoriaMovimiento: catPago?.idCategoriaMovimiento ?? null,
-        idMetodoPago: null,
+        idMetodoPago,
         valor: saldo,
         tipoReferencia: "pedido",
         idReferencia: idPedido,
@@ -149,10 +164,10 @@ export const manejarCambioEstadoPedido = async (idPedido, idEstadoAnterior, idEs
   }
 
   if (idEstadoAnterior === estadoEntregado.idEstado && idEstadoNuevo !== estadoEntregado.idEstado) {
-    await db("movimiento")
+    await trx("movimiento")
       .where({ tipoReferencia: "pedido", idReferencia: idPedido, autoGenerado: true })
       .del();
-    await db(TABLE).where({ idPedido }).update({ fechaEntregado: null });
+    await trx(TABLE).where({ idPedido }).update({ fechaEntregado: null });
   }
 
   return { consolidado: false };
@@ -178,8 +193,8 @@ export const getPedidos = async (fechaInicio, fechaFin, idEmpleado) => {
   return pedidos.map(formatPedido);
 };
 
-export const getPedidoById = async (idPedido) => {
-  const p = await BASE_QUERY().where({ [`${TABLE}.idPedido`]: idPedido }).first();
+export const getPedidoById = async (idPedido, qb = db) => {
+  const p = await BASE_QUERY(qb).where({ [`${TABLE}.idPedido`]: idPedido }).first();
   return formatPedido(p);
 };
 
@@ -197,26 +212,32 @@ export const createPedido = async (pedido) => {
 };
 
 export const updatePedido = async (idPedido, pedido) => {
-  const anterior = await db(TABLE).where({ idPedido }).select("idEstado").first();
-  const data = {
-    idCliente: pedido.idCliente,
-    idEstado: pedido.idEstado,
-    idTipoPedido: pedido.idTipoPedido,
-    valorTotal: pedido.valorTotal,
-    fechaRecibido: parseFecha(pedido.fechaRecibido),
-    fechaEntrega: parseFecha(pedido.fechaEntrega),
-  };
-  await db(TABLE).where({ idPedido }).update(data);
+  // Todo en una sola transacción: si el cambio de estado entra a "Entregado"
+  // con saldo pendiente y falta el idMetodoPago, manejarCambioEstadoPedido()
+  // lanza un error y ACÁ se revierte también el update de arriba (el pedido
+  // nunca queda con el estado cambiado pero sin consolidar).
+  return db.transaction(async (trx) => {
+    const anterior = await trx(TABLE).where({ idPedido }).select("idEstado").first();
+    const data = {
+      idCliente: pedido.idCliente,
+      idEstado: pedido.idEstado,
+      idTipoPedido: pedido.idTipoPedido,
+      valorTotal: pedido.valorTotal,
+      fechaRecibido: parseFecha(pedido.fechaRecibido),
+      fechaEntrega: parseFecha(pedido.fechaEntrega),
+    };
+    await trx(TABLE).where({ idPedido }).update(data);
 
-  // "Estado del pedido" también se puede editar a mano acá (sin pasar por
-  // los ítems) -- si el cambio entra o sale de "Entregado", igual hay que
-  // consolidar/revertir el saldo (ver manejarCambioEstadoPedido()).
-  const consolidacion = anterior
-    ? await manejarCambioEstadoPedido(idPedido, anterior.idEstado, pedido.idEstado)
-    : { consolidado: false };
+    // "Estado del pedido" también se puede editar a mano acá (sin pasar por
+    // los ítems) -- si el cambio entra o sale de "Entregado", igual hay que
+    // consolidar/revertir el saldo (ver manejarCambioEstadoPedido()).
+    const consolidacion = anterior
+      ? await manejarCambioEstadoPedido(idPedido, anterior.idEstado, pedido.idEstado, pedido.idMetodoPago, trx)
+      : { consolidado: false };
 
-  const pedidoActualizado = await getPedidoById(idPedido);
-  return { pedido: pedidoActualizado, consolidacion };
+    const pedidoActualizado = await getPedidoById(idPedido, trx);
+    return { pedido: pedidoActualizado, consolidacion };
+  });
 };
 
 export const deletePedido = async (idPedido) =>

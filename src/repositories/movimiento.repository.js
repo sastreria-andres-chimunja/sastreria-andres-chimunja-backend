@@ -60,7 +60,7 @@ export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
   // el día "hasta", no solo hasta medianoche (ver diaSiguiente()).
   if (hasta) query = query.where(`${TABLE}.fecha`, "<", diaSiguiente(hasta));
 
-  // Filtro por categoría lógica para los 3 tabs del frontend
+  // Filtro por categoría lógica para los tabs del frontend
   if (categoria === "pedidos") {
     query = query.whereIn(`${TABLE}.tipoReferencia`, ["itemPedido", "pedido", "Pedidos", "Ventas"]);
   } else if (categoria === "nomina") {
@@ -71,6 +71,17 @@ export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
         "itemPedido", "pedido", "Pedidos", "Ventas", "empleado", "Nómina", "nomina_item",
       ]);
     });
+  } else if (categoria === "creditos") {
+    // Tab "Créditos": pedidos pagados (total o parcialmente) con método
+    // "Crédito" -- en la práctica, casi siempre el abono automático que se
+    // genera al marcar el pedido como Entregado con saldo pendiente y el
+    // admin elige "Crédito" en el diálogo de confirmación. "cr_dito" (guion
+    // bajo = comodín de 1 char) para que matchee "Crédito"/"Credito" sin
+    // depender de tildes -- mismo truco ya usado en otras consultas de este
+    // archivo (ver "n%mina" en categoriaMovimiento).
+    query = query
+      .whereIn(`${TABLE}.tipoReferencia`, ["itemPedido", "pedido", "Pedidos", "Ventas"])
+      .whereRaw("LOWER(mp.\"nombreMetodoPago\") LIKE '%cr_dito%'");
   }
 
   const movimientos = await query;

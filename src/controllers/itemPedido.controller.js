@@ -82,8 +82,8 @@ export const registrarPago = async (req, res) => {
 
 export const cambiarEstadoItem = async (req, res) => {
   try {
-    const { idEstado } = req.body;
-    const { item, consolidacion } = await itemPedidoService.cambiarEstadoItem(req.params.id, idEstado);
+    const { idEstado, idMetodoPago } = req.body;
+    const { item, consolidacion } = await itemPedidoService.cambiarEstadoItem(req.params.id, idEstado, idMetodoPago);
     res.json({ item, consolidacion });
   } catch (error) {
     res.status(500).json({ error: error.message });
