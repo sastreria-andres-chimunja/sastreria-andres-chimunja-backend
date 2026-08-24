@@ -54,6 +54,31 @@ const calcularFechaTerminado = async (idItemPedido, nuevoIdEstado, qb = db) => {
   return actual.fechaTerminado != null ? null : undefined;
 };
 
+/**
+ * Calcula qué hacer con "fechaAsignado" al cambiar el idEmpleado de un ítem
+ * -- mismo criterio de "sellar una vez, limpiar al salir" que
+ * calcularFechaTerminado(), pero sobre el empleado en vez del estado:
+ * - Se asigna a un empleado (antes no tenía, o tenía otro distinto): se
+ *   sella con el momento actual -- toda asignación nueva (incluida una
+ *   reasignación a otro empleado) cuenta como "asignado ahora" para el
+ *   orden de "Mis ítems" (más reciente primero).
+ * - Se desasigna (vuelve a null): se limpia.
+ * - Si el empleado no cambia, no se toca nada (undefined = omitir del update).
+ */
+const calcularFechaAsignado = async (idItemPedido, nuevoIdEmpleado, qb = db) => {
+  const actual = await qb(TABLE).where({ idItemPedido }).select("idEmpleado", "fechaAsignado").first();
+  if (!actual) return undefined;
+
+  const idEmpleadoNormalizado = nuevoIdEmpleado || null;
+  if (actual.idEmpleado === idEmpleadoNormalizado) return undefined;
+
+  if (idEmpleadoNormalizado) {
+    // Ver nota en calcularFechaTerminado sobre por qué new Date() y no db.fn.now()
+    return new Date();
+  }
+  return actual.fechaAsignado != null ? null : undefined;
+};
+
 const formatItem = (item) =>
   item ? { ...item, fechaEntrega: formatFecha(item.fechaEntrega) } : null;
 
@@ -140,14 +165,30 @@ const BASE_QUERY = (qb = db) =>
 export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
-  // Orden por fecha de entrega (lo más próximo primero) -- para que al
-  // operario le lleguen sus ítems asignados en orden de urgencia, no por
-  // el orden en que se crearon. idItemPedido como segundo criterio, solo
-  // para que el orden sea estable entre ítems con la misma fecha.
-  let query = BASE_QUERY().orderBy([
-    { column: `${TABLE}.fechaEntrega`, order: "asc" },
-    { column: `${TABLE}.idItemPedido`, order: "asc" },
-  ]);
+
+  let query = BASE_QUERY();
+
+  // "Mis ítems" (idEmpleado sin idPedido -- la cola de trabajo personal de
+  // un empleado) ordena por fecha de ASIGNACIÓN, más reciente primero, para
+  // que vea de inmediato lo último que le asignaron. NULLS LAST manda los
+  // ítems asignados antes de que existiera esta columna (fechaAsignado
+  // desconocida) al final, no arriba como si fueran los más recientes.
+  // El resto de las vistas (detalle de pedido, "Ítems" admin) siguen
+  // ordenando por fecha de entrega (urgencia de la entrega), que tiene más
+  // sentido ahí -- no se tocó a propósito.
+  if (idEmpleado && !idPedido) {
+    query = query.orderByRaw(`"${TABLE}"."fechaAsignado" DESC NULLS LAST, "${TABLE}"."idItemPedido" DESC`);
+  } else {
+    // Orden por fecha de entrega (lo más próximo primero) -- para que al
+    // operario le lleguen sus ítems asignados en orden de urgencia, no por
+    // el orden en que se crearon. idItemPedido como segundo criterio, solo
+    // para que el orden sea estable entre ítems con la misma fecha.
+    query = query.orderBy([
+      { column: `${TABLE}.fechaEntrega`, order: "asc" },
+      { column: `${TABLE}.idItemPedido`, order: "asc" },
+    ]);
+  }
+
   if (idPedido) query = query.where({ [`${TABLE}.idPedido`]: idPedido });
   if (idEmpleado) query = query.where({ [`${TABLE}.idEmpleado`]: idEmpleado });
   if (desde) query = query.where(`${TABLE}.fechaEntrega`, ">=", desde);
@@ -176,6 +217,9 @@ export const createItemPedido = async (item) => {
     observacion: item.observacion || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
     pagado: false,
+    // Si ya nace con empleado asignado, cuenta como asignación desde ya
+    // (para el orden de "Mis ítems" -- ver calcularFechaAsignado()).
+    fechaAsignado: idEmpleado ? new Date() : null,
   };
   // Un ítem recién creado nunca nace en "Entregado" (siempre arranca en
   // Pendiente/Asignado), así que esto nunca puede disparar el error de
@@ -200,6 +244,7 @@ export const updateItemPedido = async (idItemPedido, item) => {
       ? item.idEstado
       : await getIdEstadoAuto(idEmpleado);
     const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado, trx);
+    const fechaAsignado = await calcularFechaAsignado(idItemPedido, idEmpleado, trx);
     const data = {
       idEmpleado,
       idEstado,
@@ -210,6 +255,7 @@ export const updateItemPedido = async (idItemPedido, item) => {
       observacion: item.observacion || null,
       fechaEntrega: parseFecha(item.fechaEntrega),
       ...(fechaTerminado !== undefined && { fechaTerminado }),
+      ...(fechaAsignado !== undefined && { fechaAsignado }),
     };
     await trx(TABLE).where({ idItemPedido }).update(data);
     const consolidacion = await sincronizarEstadoPedido(idItemPedido, item.idMetodoPago, trx);
@@ -234,7 +280,11 @@ export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) => {
   // "falta método de pago", pero igual va en transacción por consistencia.
   return db.transaction(async (trx) => {
     const idEstado = await getIdEstadoAuto(idEmpleado);
-    await trx(TABLE).where({ idItemPedido }).update({ idEmpleado, idEstado });
+    const fechaAsignado = await calcularFechaAsignado(idItemPedido, idEmpleado, trx);
+    await trx(TABLE).where({ idItemPedido }).update({
+      idEmpleado, idEstado,
+      ...(fechaAsignado !== undefined && { fechaAsignado }),
+    });
     const consolidacion = await sincronizarEstadoPedido(idItemPedido, undefined, trx);
     return { item: await getItemPedidoById(idItemPedido, trx), consolidacion };
   });
