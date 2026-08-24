@@ -1,7 +1,20 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { manejarCambioEstadoPedido } from "./pedido.repository.js";
 
 const TABLE = "itemPedido";
+
+// Fotos del ítem (para la vista de "Mis ítems" del empleado, que las
+// muestra en la tarjeta con ampliar/lightbox) -- se traen ya agregadas acá
+// para no tener que hacer una consulta aparte por cada ítem.
+const FOTOS_ITEM = `(
+  SELECT COALESCE(
+    json_agg(json_build_object('idImagen', img."idImagen", 'rutaImagen', img."rutaImagen") ORDER BY img."idImagen"),
+    '[]'
+  )
+  FROM imagenes img
+  WHERE img."tipoReferencia" = 'itemPedido' AND img."idReferencia" = "${TABLE}"."idItemPedido"
+) as "fotos"`;
 
 const getIdEstadoAuto = async (idEmpleado) => {
   const nombre = idEmpleado ? "Asignado" : "Pendiente";
@@ -51,10 +64,10 @@ const formatItem = (item) =>
 // "No realizado" es manual (solo Admin) y nunca se toca desde acá.
 const sincronizarEstadoPedido = async (idItemPedido) => {
   const item = await db(TABLE).where({ idItemPedido }).first();
-  if (!item) return;
+  if (!item) return { consolidado: false };
 
   const pedido = await db("pedido").where({ idPedido: item.idPedido }).select("idEstado").first();
-  if (!pedido) return;
+  if (!pedido) return { consolidado: false };
 
   const [estadoPendiente, estadoAsignado, estadoTerminado, estadoEntregado, estadoNoRealizado] = await Promise.all([
     db("estado").whereRaw("LOWER(nombre) = 'pendiente'").first(),
@@ -64,10 +77,10 @@ const sincronizarEstadoPedido = async (idItemPedido) => {
     db("estado").whereRaw("LOWER(nombre) = 'no realizado'").first(),
   ]);
 
-  if (estadoNoRealizado && pedido.idEstado === estadoNoRealizado.idEstado) return;
+  if (estadoNoRealizado && pedido.idEstado === estadoNoRealizado.idEstado) return { consolidado: false };
 
   const items = await db(TABLE).where({ idPedido: item.idPedido }).select("idEstado");
-  if (items.length === 0) return;
+  if (items.length === 0) return { consolidado: false };
 
   const todosEntregado = estadoEntregado && items.every((i) => i.idEstado === estadoEntregado.idEstado);
   const todosTerminado = estadoTerminado && items.every((i) => i.idEstado === estadoTerminado.idEstado);
@@ -88,7 +101,12 @@ const sincronizarEstadoPedido = async (idItemPedido) => {
 
   if (nuevoIdEstado != null && nuevoIdEstado !== pedido.idEstado) {
     await db("pedido").where({ idPedido: item.idPedido }).update({ idEstado: nuevoIdEstado });
+    // Consolida/revierte el saldo automático si el pedido entra o sale de
+    // "Entregado" (ver manejarCambioEstadoPedido() en pedido.repository.js).
+    return manejarCambioEstadoPedido(item.idPedido, pedido.idEstado, nuevoIdEstado);
   }
+
+  return { consolidado: false };
 };
 
 const BASE_QUERY = () =>
@@ -104,13 +122,21 @@ const BASE_QUERY = () =>
       `e.nombre as nombreEstado`,
       `m.tipoPrenda as tipoPrendaMedida`,
       db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
-      `c.telefono as telefonoCliente`
+      `c.telefono as telefonoCliente`,
+      db.raw(FOTOS_ITEM)
     );
 
 export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
-  let query = BASE_QUERY().orderBy(`${TABLE}.idItemPedido`, "asc");
+  // Orden por fecha de entrega (lo más próximo primero) -- para que al
+  // operario le lleguen sus ítems asignados en orden de urgencia, no por
+  // el orden en que se crearon. idItemPedido como segundo criterio, solo
+  // para que el orden sea estable entre ítems con la misma fecha.
+  let query = BASE_QUERY().orderBy([
+    { column: `${TABLE}.fechaEntrega`, order: "asc" },
+    { column: `${TABLE}.idItemPedido`, order: "asc" },
+  ]);
   if (idPedido) query = query.where({ [`${TABLE}.idPedido`]: idPedido });
   if (idEmpleado) query = query.where({ [`${TABLE}.idEmpleado`]: idEmpleado });
   if (desde) query = query.where(`${TABLE}.fechaEntrega`, ">=", desde);
@@ -141,8 +167,8 @@ export const createItemPedido = async (item) => {
     pagado: false,
   };
   const [newItem] = await db(TABLE).insert(data).returning("*");
-  await sincronizarEstadoPedido(newItem.idItemPedido);
-  return getItemPedidoById(newItem.idItemPedido);
+  const consolidacion = await sincronizarEstadoPedido(newItem.idItemPedido);
+  return { item: await getItemPedidoById(newItem.idItemPedido), consolidacion };
 };
 
 export const updateItemPedido = async (idItemPedido, item) => {
@@ -164,8 +190,8 @@ export const updateItemPedido = async (idItemPedido, item) => {
     ...(fechaTerminado !== undefined && { fechaTerminado }),
   };
   await db(TABLE).where({ idItemPedido }).update(data);
-  await sincronizarEstadoPedido(idItemPedido);
-  return getItemPedidoById(idItemPedido);
+  const consolidacion = await sincronizarEstadoPedido(idItemPedido);
+  return { item: await getItemPedidoById(idItemPedido), consolidacion };
 };
 
 export const cambiarEstadoItem = async (idItemPedido, idEstado) => {
@@ -173,15 +199,15 @@ export const cambiarEstadoItem = async (idItemPedido, idEstado) => {
   await db(TABLE)
     .where({ idItemPedido })
     .update({ idEstado, ...(fechaTerminado !== undefined && { fechaTerminado }) });
-  await sincronizarEstadoPedido(idItemPedido);
-  return getItemPedidoById(idItemPedido);
+  const consolidacion = await sincronizarEstadoPedido(idItemPedido);
+  return { item: await getItemPedidoById(idItemPedido), consolidacion };
 };
 
 export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) => {
   const idEstado = await getIdEstadoAuto(idEmpleado);
   await db(TABLE).where({ idItemPedido }).update({ idEmpleado, idEstado });
-  await sincronizarEstadoPedido(idItemPedido);
-  return getItemPedidoById(idItemPedido);
+  const consolidacion = await sincronizarEstadoPedido(idItemPedido);
+  return { item: await getItemPedidoById(idItemPedido), consolidacion };
 };
 
 export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) => {

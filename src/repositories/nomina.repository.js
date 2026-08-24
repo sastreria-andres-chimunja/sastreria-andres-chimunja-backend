@@ -235,7 +235,18 @@ export const liquidarNomina = async (idEmpleado) => {
     0
   );
 
-  return { itemsPagados: items.length, abonosLiquidados, totalPagado };
+  // Se devuelve también el detalle mínimo de los ítems pagados -- lo usa el
+  // frontend para armar el comprobante (ticket/PDF/WhatsApp) de "Pagar todo",
+  // igual que ya hace con el pago de un ítem individual.
+  const itemsDetalle = items.map((i) => ({
+    idItemPedido: i.idItemPedido,
+    idPedido: i.idPedido,
+    descripcion: i.descripcion,
+    valor: Number(i.valor ?? 0),
+    comisionEmpleado: Number(i.comisionEmpleado ?? 0),
+  }));
+
+  return { itemsPagados: items.length, abonosLiquidados, totalPagado, items: itemsDetalle };
 };
 
 // ─────────────────────────────────────────────

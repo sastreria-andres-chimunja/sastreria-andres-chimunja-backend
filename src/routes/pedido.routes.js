@@ -9,6 +9,7 @@ router.get("/valor-programado", pedidoController.getValorProgramado);
 router.get("/publico/:token", pedidoController.getEstadoPublico);
 router.get("/:id/abonos", pedidoController.getAbonosPedido);
 router.post("/:id/registrar-abono", pedidoController.registrarAbonoPedido);
+router.post("/:id/revertir-entregado", pedidoController.revertirPedidoEntregado);
 router.get("/:id", pedidoController.getPedidoById);
 router.post("/", pedidoController.createPedido);
 router.put("/:id", pedidoController.updatePedido);

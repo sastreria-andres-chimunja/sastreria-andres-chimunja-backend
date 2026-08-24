@@ -10,6 +10,7 @@ const formatPedido = (p) =>
         ...p,
         fechaRecibido: formatFecha(p.fechaRecibido),
         fechaEntrega: formatFecha(p.fechaEntrega),
+        fechaEntregado: formatFecha(p.fechaEntregado),
         created_at: formatFecha(p.created_at),
         updated_at: formatFecha(p.updated_at),
         totalAbonado: p.totalAbonado != null ? Number(p.totalAbonado) : 0,
@@ -41,6 +42,25 @@ const ITEMS_TERMINADOS = `(
   WHERE ip."idPedido" = "${TABLE}"."idPedido" AND LOWER(e2.nombre) IN ('terminado', 'entregado')
 ) as "itemsTerminados"`;
 
+// Nombre del empleado a mostrar en la tarjeta de "Hoja de trabajo":
+// - Si el pedido no tiene ítems, o alguno todavía no tiene empleado
+//   asignado, no se muestra nombre (NULL) -- el paquete no está completo
+//   "para" nadie todavía.
+// - Si TODOS los ítems están asignados al mismo empleado, se muestra su
+//   nombre.
+// - Si están repartidos entre 2+ empleados distintos, se muestra "Varios".
+const EMPLEADO_ASIGNADO = `(
+  SELECT CASE
+    WHEN COUNT(*) = 0 THEN NULL
+    WHEN COUNT(*) FILTER (WHERE ip."idEmpleado" IS NULL) > 0 THEN NULL
+    WHEN COUNT(DISTINCT ip."idEmpleado") = 1 THEN MAX(e2.nombres || ' ' || e2.apellidos)
+    ELSE 'Varios'
+  END
+  FROM "itemPedido" ip
+  LEFT JOIN empleado e2 ON e2."idEmpleado" = ip."idEmpleado"
+  WHERE ip."idPedido" = "${TABLE}"."idPedido"
+) as "empleadoAsignado"`;
+
 const BASE_QUERY = () =>
   db(TABLE)
     .leftJoin("cliente as c", "c.idCliente", `${TABLE}.idCliente`)
@@ -54,8 +74,75 @@ const BASE_QUERY = () =>
       `tp.nombre as nombreTipoPedido`,
       db.raw(TOTAL_ABONADO),
       db.raw(TOTAL_ITEMS),
-      db.raw(ITEMS_TERMINADOS)
+      db.raw(ITEMS_TERMINADOS),
+      db.raw(EMPLEADO_ASIGNADO)
     );
+
+/**
+ * Se llama cada vez que el idEstado de un pedido CAMBIA, desde cualquiera
+ * de los dos caminos que existen (sincronizarEstadoPedido() en
+ * itemPedido.repository.js cuando cambia por los ítems, o la edición
+ * manual de "Estado del pedido" en updatePedido() acá mismo):
+ * - Si el nuevo estado es "Entregado" y antes no lo era: consolida el
+ *   saldo pendiente (valorTotal - abonado) en un abono automático
+ *   (movimiento.autoGenerado=true) y sella fechaEntregado -- así no hace
+ *   falta registrar un abono aparte por lo que quede pendiente al
+ *   entregar.
+ * - Si el estado ANTERIOR era "Entregado" y el nuevo ya no lo es: revierte
+ *   -- borra ese abono automático (si existe) y limpia fechaEntregado.
+ * Devuelve { consolidado, monto? } para que el llamador pueda avisarle al
+ * usuario si se generó un abono automático.
+ */
+export const manejarCambioEstadoPedido = async (idPedido, idEstadoAnterior, idEstadoNuevo) => {
+  if (idEstadoAnterior === idEstadoNuevo) return { consolidado: false };
+
+  const estadoEntregado = await db("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
+  if (!estadoEntregado) return { consolidado: false };
+
+  if (idEstadoNuevo === estadoEntregado.idEstado && idEstadoAnterior !== estadoEntregado.idEstado) {
+    const pedido = await db(TABLE).where({ idPedido }).first();
+    if (!pedido) return { consolidado: false };
+
+    await db(TABLE).where({ idPedido }).update({ fechaEntregado: new Date() });
+
+    const abonos = await db("movimiento")
+      .where({ tipoReferencia: "pedido", idReferencia: idPedido })
+      .select("valor");
+    const totalAbonado = abonos.reduce((s, a) => s + Number(a.valor ?? 0), 0);
+    const saldo = Number(pedido.valorTotal ?? 0) - totalAbonado;
+
+    if (saldo > 0.01) {
+      const tipoEntrada = await db("tipoMovimiento")
+        .whereRaw("LOWER(\"nombreTipoMovimiento\") like '%ingreso%'")
+        .first();
+      const catPago = await db("categoriaMovimiento")
+        .whereRaw("LOWER(\"nombreCategoriaMovimiento\") like '%venta%'")
+        .first();
+      await db("movimiento").insert({
+        idTipoMovimiento: tipoEntrada?.idTipoMovimiento ?? 1,
+        idCategoriaMovimiento: catPago?.idCategoriaMovimiento ?? null,
+        idMetodoPago: null,
+        valor: saldo,
+        tipoReferencia: "pedido",
+        idReferencia: idPedido,
+        observacion: `Saldo consolidado automáticamente al marcar el pedido #${idPedido} como Entregado`,
+        autoGenerado: true,
+        fecha: new Date(),
+      });
+      return { consolidado: true, monto: saldo };
+    }
+    return { consolidado: false };
+  }
+
+  if (idEstadoAnterior === estadoEntregado.idEstado && idEstadoNuevo !== estadoEntregado.idEstado) {
+    await db("movimiento")
+      .where({ tipoReferencia: "pedido", idReferencia: idPedido, autoGenerado: true })
+      .del();
+    await db(TABLE).where({ idPedido }).update({ fechaEntregado: null });
+  }
+
+  return { consolidado: false };
+};
 
 export const getPedidos = async (fechaInicio, fechaFin, idEmpleado) => {
   const desde = parseFecha(fechaInicio);
@@ -96,6 +183,7 @@ export const createPedido = async (pedido) => {
 };
 
 export const updatePedido = async (idPedido, pedido) => {
+  const anterior = await db(TABLE).where({ idPedido }).select("idEstado").first();
   const data = {
     idCliente: pedido.idCliente,
     idEstado: pedido.idEstado,
@@ -105,11 +193,46 @@ export const updatePedido = async (idPedido, pedido) => {
     fechaEntrega: parseFecha(pedido.fechaEntrega),
   };
   await db(TABLE).where({ idPedido }).update(data);
-  return getPedidoById(idPedido);
+
+  // "Estado del pedido" también se puede editar a mano acá (sin pasar por
+  // los ítems) -- si el cambio entra o sale de "Entregado", igual hay que
+  // consolidar/revertir el saldo (ver manejarCambioEstadoPedido()).
+  const consolidacion = anterior
+    ? await manejarCambioEstadoPedido(idPedido, anterior.idEstado, pedido.idEstado)
+    : { consolidado: false };
+
+  const pedidoActualizado = await getPedidoById(idPedido);
+  return { pedido: pedidoActualizado, consolidacion };
 };
 
 export const deletePedido = async (idPedido) =>
   db(TABLE).where({ idPedido }).del();
+
+/**
+ * Revierte manualmente un pedido de "Entregado" a "Terminado" (acción de
+ * Admin/Asistente) -- devuelve todos sus ítems Entregado a Terminado y
+ * reutiliza manejarCambioEstadoPedido() para deshacer el consolidado
+ * automático del saldo (si lo hubo) y limpiar fechaEntregado.
+ */
+export const revertirPedidoEntregado = async (idPedido) => {
+  const pedido = await db(TABLE).where({ idPedido }).first();
+  if (!pedido) throw new Error("Pedido no encontrado");
+
+  const estadoEntregado = await db("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
+  const estadoTerminado = await db("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
+  if (!estadoEntregado || pedido.idEstado !== estadoEntregado.idEstado) {
+    throw new Error("El pedido no está en estado Entregado");
+  }
+  if (!estadoTerminado) throw new Error("No existe el estado 'Terminado'");
+
+  await db("itemPedido")
+    .where({ idPedido, idEstado: estadoEntregado.idEstado })
+    .update({ idEstado: estadoTerminado.idEstado });
+  await db(TABLE).where({ idPedido }).update({ idEstado: estadoTerminado.idEstado });
+  await manejarCambioEstadoPedido(idPedido, estadoEntregado.idEstado, estadoTerminado.idEstado);
+
+  return getPedidoById(idPedido);
+};
 
 // ─── Límite diario de entregas ──────────────────────────────────────────────
 // Suma el valor total ya programado para una fecha de entrega, excluyendo

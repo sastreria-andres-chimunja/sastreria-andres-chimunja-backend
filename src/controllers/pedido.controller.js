@@ -89,11 +89,20 @@ export const createPedido = async (req, res) => {
 
 export const updatePedido = async (req, res) => {
   try {
-    const pedido = await pedidoService.updatePedido(req.params.id, req.body);
+    const { pedido, consolidacion } = await pedidoService.updatePedido(req.params.id, req.body);
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
-    res.json({ pedido });
+    res.json({ pedido, consolidacion });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const revertirPedidoEntregado = async (req, res) => {
+  try {
+    const pedido = await pedidoService.revertirPedidoEntregado(req.params.id);
+    res.json({ pedido });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 };
 

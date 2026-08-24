@@ -9,7 +9,8 @@ const formatEmpleado = (emp) =>
 const WITH_ROL = () =>
   db(TABLE)
     .leftJoin('rol as r', 'r.idRol', `${TABLE}.idRol`)
-    .select(`${TABLE}.*`, 'r.nombre as nombreRol');
+    .leftJoin('auth as a', 'a.idEmpleado', `${TABLE}.idEmpleado`)
+    .select(`${TABLE}.*`, 'r.nombre as nombreRol', 'a.username as username');
 
 export const getEmpleadoById = async (idEmpleado) => {
   const emp = await WITH_ROL().where({ [`${TABLE}.idEmpleado`]: idEmpleado }).first();

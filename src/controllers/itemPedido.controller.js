@@ -27,8 +27,8 @@ export const getItemPedidoById = async (req, res) => {
 
 export const createItemPedido = async (req, res) => {
   try {
-    const item = await itemPedidoService.createItemPedido(req.body);
-    res.status(201).json({ item });
+    const { item, consolidacion } = await itemPedidoService.createItemPedido(req.body);
+    res.status(201).json({ item, consolidacion });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -36,9 +36,9 @@ export const createItemPedido = async (req, res) => {
 
 export const updateItemPedido = async (req, res) => {
   try {
-    const item = await itemPedidoService.updateItemPedido(req.params.id, req.body);
+    const { item, consolidacion } = await itemPedidoService.updateItemPedido(req.params.id, req.body);
     if (!item) return res.status(404).json({ error: "Item no encontrado" });
-    res.json({ item });
+    res.json({ item, consolidacion });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -83,8 +83,8 @@ export const registrarPago = async (req, res) => {
 export const cambiarEstadoItem = async (req, res) => {
   try {
     const { idEstado } = req.body;
-    const item = await itemPedidoService.cambiarEstadoItem(req.params.id, idEstado);
-    res.json({ item });
+    const { item, consolidacion } = await itemPedidoService.cambiarEstadoItem(req.params.id, idEstado);
+    res.json({ item, consolidacion });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -93,8 +93,8 @@ export const cambiarEstadoItem = async (req, res) => {
 export const asignarEmpleadoItem = async (req, res) => {
   try {
     const { idEmpleado } = req.body;
-    const item = await itemPedidoService.asignarEmpleadoItem(req.params.id, idEmpleado);
-    res.json({ item });
+    const { item, consolidacion } = await itemPedidoService.asignarEmpleadoItem(req.params.id, idEmpleado);
+    res.json({ item, consolidacion });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
