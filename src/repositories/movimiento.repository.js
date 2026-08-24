@@ -82,6 +82,17 @@ export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
     query = query
       .whereIn(`${TABLE}.tipoReferencia`, ["itemPedido", "pedido", "Pedidos", "Ventas"])
       .whereRaw("LOWER(mp.\"nombreMetodoPago\") LIKE '%cr_dito%'");
+  } else if (categoria === "transferencias") {
+    // Tab "Transferencias": pedidos pagados con cualquier método que NO sea
+    // Efectivo ni Crédito (Nequi, Daviplata, Llaves, Transferencia, etc. --
+    // todo lo "digital"/no físico). Se excluyen los movimientos sin método
+    // registrado (idMetodoPago null) -- no son transferencias, son datos
+    // viejos/sin especificar, y meterlos acá los representaría mal.
+    query = query
+      .whereIn(`${TABLE}.tipoReferencia`, ["itemPedido", "pedido", "Pedidos", "Ventas"])
+      .whereNotNull(`${TABLE}.idMetodoPago`)
+      .whereRaw("LOWER(mp.\"nombreMetodoPago\") NOT LIKE '%efectivo%'")
+      .whereRaw("LOWER(mp.\"nombreMetodoPago\") NOT LIKE '%cr_dito%'");
   }
 
   const movimientos = await query;
