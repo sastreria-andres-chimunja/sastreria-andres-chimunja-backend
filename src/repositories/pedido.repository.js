@@ -16,6 +16,7 @@ const formatPedido = (p) =>
         totalAbonado: p.totalAbonado != null ? Number(p.totalAbonado) : 0,
         totalItems: p.totalItems != null ? Number(p.totalItems) : 0,
         itemsTerminados: p.itemsTerminados != null ? Number(p.itemsTerminados) : 0,
+        itemsAsignados: p.itemsAsignados != null ? Number(p.itemsAsignados) : 0,
         tokenPublico: generarTokenPedido(p.idPedido),
       }
     : null;
@@ -41,6 +42,16 @@ const ITEMS_TERMINADOS = `(
   JOIN estado e2 ON e2."idEstado" = ip."idEstado"
   WHERE ip."idPedido" = "${TABLE}"."idPedido" AND LOWER(e2.nombre) IN ('terminado', 'entregado')
 ) as "itemsTerminados"`;
+
+// Cuántos ítems del pedido ya tienen empleado asignado (idEmpleado no nulo)
+// -- independiente de EMPLEADO_ASIGNADO más abajo, que solo muestra un
+// nombre cuando TODOS quedaron para el mismo empleado. Este contador
+// informa el progreso de asignación aunque esté repartido entre varios o
+// todavía falten ítems por asignar ("1/3 ítems asignados").
+const ITEMS_ASIGNADOS = `(
+  SELECT COUNT(*) FROM "itemPedido" ip
+  WHERE ip."idPedido" = "${TABLE}"."idPedido" AND ip."idEmpleado" IS NOT NULL
+) as "itemsAsignados"`;
 
 // Nombre del empleado a mostrar en la tarjeta de "Hoja de trabajo":
 // - Si el pedido no tiene ítems, o alguno todavía no tiene empleado
@@ -92,6 +103,7 @@ const BASE_QUERY = (qb = db) =>
       qb.raw(TOTAL_ABONADO),
       qb.raw(TOTAL_ITEMS),
       qb.raw(ITEMS_TERMINADOS),
+      qb.raw(ITEMS_ASIGNADOS),
       qb.raw(EMPLEADO_ASIGNADO),
       qb.raw(FOTOS_PEDIDO)
     );
