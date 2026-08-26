@@ -16,6 +16,24 @@ const FOTOS_ITEM = `(
   WHERE img."tipoReferencia" = 'itemPedido' AND img."idReferencia" = "${TABLE}"."idItemPedido"
 ) as "fotos"`;
 
+// Número de ítem DENTRO de su propio pedido (1, 2, 3...) -- lo que ya se ve
+// en el detalle del pedido ("Ítem #1", "Ítem #2", calculado ahí como
+// posición en el arreglo, ordenado por fechaEntrega/idItemPedido igual que
+// getItemsPedido() sin idEmpleado). Se expone acá para que "Mis ítems" e
+// "Ítems" (admin) muestren el MISMO número que el detalle del pedido, en
+// vez del idItemPedido interno (que no significa nada para el operario) --
+// cuenta cuántos ítems del mismo pedido van "antes" bajo ese mismo orden y
+// suma 1.
+const NUMERO_ITEM = `(
+  SELECT COUNT(*) + 1
+  FROM "itemPedido" ip3
+  WHERE ip3."idPedido" = "${TABLE}"."idPedido"
+    AND (
+      ip3."fechaEntrega" < "${TABLE}"."fechaEntrega"
+      OR (ip3."fechaEntrega" = "${TABLE}"."fechaEntrega" AND ip3."idItemPedido" < "${TABLE}"."idItemPedido")
+    )
+) as "numeroItem"`;
+
 const getIdEstadoAuto = async (idEmpleado) => {
   const nombre = idEmpleado ? "Asignado" : "Pendiente";
   const estado = await db("estado").where({ nombre }).first();
@@ -80,7 +98,15 @@ const calcularFechaAsignado = async (idItemPedido, nuevoIdEmpleado, qb = db) => 
 };
 
 const formatItem = (item) =>
-  item ? { ...item, fechaEntrega: formatFecha(item.fechaEntrega) } : null;
+  item
+    ? {
+        ...item,
+        fechaEntrega: formatFecha(item.fechaEntrega),
+        // COUNT(*) de Postgres vuelve como bigint -> node-pg lo entrega como
+        // string (mismo criterio ya usado con totalItems en pedido.repository.js).
+        numeroItem: item.numeroItem != null ? Number(item.numeroItem) : null,
+      }
+    : null;
 
 // Sincroniza el estado del pedido según el estado de todos sus ítems.
 // Reglas: todos Entregado → pedido Entregado · todos Terminado → pedido Terminado
@@ -159,7 +185,8 @@ const BASE_QUERY = (qb = db) =>
       `m.tipoPrenda as tipoPrendaMedida`,
       qb.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
       `c.telefono as telefonoCliente`,
-      qb.raw(FOTOS_ITEM)
+      qb.raw(FOTOS_ITEM),
+      qb.raw(NUMERO_ITEM)
     );
 
 export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado) => {
