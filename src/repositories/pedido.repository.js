@@ -1,6 +1,7 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
 import { generarTokenPedido } from "../utils/pedidoToken.utils.js";
+import { mayus } from "../utils/text.utils.js";
 
 const TABLE = "pedido";
 
@@ -348,7 +349,7 @@ export const registrarAbonoPedido = async (idPedido, { idMetodoPago, valor, obse
     valor,
     tipoReferencia: "pedido",
     idReferencia: idPedido,
-    observacion: observacion ? `${obsBase} | ${observacion}` : obsBase,
+    observacion: observacion ? `${obsBase} | ${mayus(observacion)}` : obsBase,
     fecha: db.fn.now(),
   });
 

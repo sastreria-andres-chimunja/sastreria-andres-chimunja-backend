@@ -1,4 +1,5 @@
 import db from "../config/database.js";
+import { mayus } from "../utils/text.utils.js";
 
 const TABLE = "cliente";
 
@@ -40,7 +41,8 @@ export const createCliente = async (cliente) => {
     throw new Error(`Ya existe un cliente con ese nombre y teléfono: ${duplicado.nombres} ${duplicado.apellidos}`);
   }
 
-  const [newCliente] = await db(TABLE).insert(cliente).returning("*");
+  const data = { ...cliente, nombres: mayus(cliente.nombres), apellidos: mayus(cliente.apellidos) };
+  const [newCliente] = await db(TABLE).insert(data).returning("*");
 
   return newCliente;
 };
@@ -51,9 +53,10 @@ export const updateCliente = async (id, cliente) => {
     throw new Error(`Ya existe otro cliente con ese nombre y teléfono: ${duplicado.nombres} ${duplicado.apellidos}`);
   }
 
+  const data = { ...cliente, nombres: mayus(cliente.nombres), apellidos: mayus(cliente.apellidos) };
   const [updated] = await db(TABLE)
     .where({ idCliente: id })
-    .update(cliente)
+    .update(data)
     .returning("*");
 
   return updated;

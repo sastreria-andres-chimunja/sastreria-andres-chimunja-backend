@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { mayus } from "../utils/text.utils.js";
 
 const TABLE = "empleado";
 
@@ -25,6 +26,9 @@ export const getEmpleados = async () => {
 export const createEmpleado = async (empleado) => {
   const data = {
     ...empleado,
+    nombres: mayus(empleado.nombres),
+    apellidos: mayus(empleado.apellidos),
+    direccion: mayus(empleado.direccion),
     fechaCumpleanios: parseFecha(empleado.fechaCumpleanios),
   };
   const [newEmpleado] = await db(TABLE).insert(data).returning("*");
@@ -33,7 +37,10 @@ export const createEmpleado = async (empleado) => {
 
 export const updateEmpleado = async (idEmpleado, empleado) => {
   const { nombres, apellidos, telefono, direccion, idRol, fechaCumpleanios } = empleado;
-  const data = { nombres, apellidos, telefono, direccion, idRol, fechaCumpleanios: parseFecha(fechaCumpleanios) };
+  const data = {
+    nombres: mayus(nombres), apellidos: mayus(apellidos), telefono, direccion: mayus(direccion),
+    idRol, fechaCumpleanios: parseFecha(fechaCumpleanios),
+  };
   const [updated] = await db(TABLE)
     .where({ idEmpleado })
     .update(data)

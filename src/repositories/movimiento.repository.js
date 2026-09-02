@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha, diaSiguiente } from "../utils/date.utils.js";
+import { mayus } from "../utils/text.utils.js";
 
 const TABLE = "movimiento";
 
@@ -107,7 +108,7 @@ const soloColumnasTabla = (movimiento, fechaDefault = null) => ({
   idMetodoPago:          movimiento.idMetodoPago ?? null,
   tipoReferencia:        movimiento.tipoReferencia ?? null,
   idReferencia:          movimiento.idReferencia ?? null,
-  observacion:           movimiento.observacion ?? null,
+  observacion:           mayus(movimiento.observacion) ?? null,
 });
 
 export const createMovimiento = async (movimiento) => {

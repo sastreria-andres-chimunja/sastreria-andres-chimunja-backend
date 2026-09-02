@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { mayus } from "../utils/text.utils.js";
 import { manejarCambioEstadoPedido } from "./pedido.repository.js";
 
 const TABLE = "itemPedido";
@@ -240,8 +241,8 @@ export const createItemPedido = async (item) => {
     idMedida: item.idMedida || null,
     valor: item.valor,
     comisionEmpleado: item.comisionEmpleado ?? 50,
-    descripcion: item.descripcion,
-    observacion: item.observacion || null,
+    descripcion: mayus(item.descripcion),
+    observacion: mayus(item.observacion) || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
     pagado: false,
     // Si ya nace con empleado asignado, cuenta como asignación desde ya
@@ -278,8 +279,8 @@ export const updateItemPedido = async (idItemPedido, item) => {
       idMedida: item.idMedida || null,
       valor: item.valor,
       comisionEmpleado: item.comisionEmpleado ?? 0,
-      descripcion: item.descripcion,
-      observacion: item.observacion || null,
+      descripcion: mayus(item.descripcion),
+      observacion: mayus(item.observacion) || null,
       fechaEntrega: parseFecha(item.fechaEntrega),
       ...(fechaTerminado !== undefined && { fechaTerminado }),
       ...(fechaAsignado !== undefined && { fechaAsignado }),
@@ -385,7 +386,7 @@ export const registrarPago = async (idItemPedido, { idMetodoPago, valor, observa
     valor,
     tipoReferencia: "itemPedido",
     idReferencia: idItemPedido,
-    observacion: observacion ? `${obsBase} | ${observacion}` : obsBase,
+    observacion: observacion ? `${obsBase} | ${mayus(observacion)}` : obsBase,
     fecha: db.fn.now(),
   });
 
