@@ -24,5 +24,5 @@ export const registrarAbonoPedido = async (idPedido, data) =>
 export const getValorProgramado = async (fechaEntrega, excluirIdPedido) =>
   pedidoRepository.getValorProgramado(fechaEntrega, excluirIdPedido);
 
-export const revertirPedidoEntregado = async (idPedido) =>
-  pedidoRepository.revertirPedidoEntregado(idPedido);
+export const revertirEstadoPedido = async (idPedido) =>
+  pedidoRepository.revertirEstadoPedido(idPedido);

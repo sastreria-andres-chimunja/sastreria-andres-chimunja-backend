@@ -122,5 +122,18 @@ export const updateMovimiento = async (idMovimiento, movimiento) => {
   return getMovimientoById(idMovimiento);
 };
 
-export const deleteMovimiento = async (idMovimiento) =>
-  db(TABLE).where({ idMovimiento }).del();
+export const deleteMovimiento = async (idMovimiento) => {
+  const mov = await db(TABLE).where({ idMovimiento }).first();
+  // El abono que se consolida solo al marcar un pedido como Entregado
+  // (autoGenerado=true) no se puede borrar por acá -- borrarlo directo
+  // dejaría el pedido con fechaEntregado sellada pero sin el abono que la
+  // acompaña (estado inconsistente). Para eso ya existe "Revertir" en la
+  // Hoja de trabajo, que deshace las dos cosas juntas (ver
+  // manejarCambioEstadoPedido() en pedido.repository.js).
+  if (mov?.autoGenerado) {
+    throw new Error(
+      "Este abono se generó automáticamente al marcar el pedido como Entregado -- usa \"Revertir\" en la Hoja de trabajo en vez de eliminarlo directamente."
+    );
+  }
+  return db(TABLE).where({ idMovimiento }).del();
+};

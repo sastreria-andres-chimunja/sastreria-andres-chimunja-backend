@@ -97,9 +97,9 @@ export const updatePedido = async (req, res) => {
   }
 };
 
-export const revertirPedidoEntregado = async (req, res) => {
+export const revertirEstadoPedido = async (req, res) => {
   try {
-    const pedido = await pedidoService.revertirPedidoEntregado(req.params.id);
+    const pedido = await pedidoService.revertirEstadoPedido(req.params.id);
     res.json({ pedido });
   } catch (error) {
     res.status(400).json({ error: error.message });

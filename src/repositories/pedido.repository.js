@@ -256,29 +256,48 @@ export const deletePedido = async (idPedido) =>
   db(TABLE).where({ idPedido }).del();
 
 /**
- * Revierte manualmente un pedido de "Entregado" a "Terminado" (acción de
- * Admin/Asistente) -- devuelve todos sus ítems Entregado a Terminado y
- * reutiliza manejarCambioEstadoPedido() para deshacer el consolidado
- * automático del saldo (si lo hubo) y limpiar fechaEntregado.
+ * Revierte manualmente un pedido a su estado anterior en la secuencia
+ * Pendiente → Asignado → Terminado → Entregado (un paso hacia atrás, no a
+ * un estado arbitrario) -- solo Admin. Bulk-revierte TODOS los ítems del
+ * pedido que estén en el estado "más avanzado" actual, para que ítems y
+ * pedido queden consistentes entre sí (mismo criterio que ya usaba esta
+ * función solo para Entregado→Terminado):
+ * - Entregado → Terminado: además deshace la consolidación automática del
+ *   saldo (si la hubo) y limpia fechaEntregado, vía manejarCambioEstadoPedido().
+ * - Terminado → Asignado: limpia fechaTerminado de cada ítem (mismo
+ *   criterio que "Reabrir" a nivel de ítem en Mis ítems) -- no hay dinero
+ *   que revertir en este paso.
+ * "No realizado" (estado manual aparte) y Pendiente (ya es el principio)
+ * no se pueden revertir por acá.
+ * Todo dentro de una transacción: si algo falla a mitad de camino, no
+ * queda ni un ítem ni el pedido a medias.
  */
-export const revertirPedidoEntregado = async (idPedido) => {
-  const pedido = await db(TABLE).where({ idPedido }).first();
-  if (!pedido) throw new Error("Pedido no encontrado");
+export const revertirEstadoPedido = async (idPedido) => {
+  return db.transaction(async (trx) => {
+    const pedido = await trx(TABLE).where({ idPedido }).first();
+    if (!pedido) throw new Error("Pedido no encontrado");
 
-  const estadoEntregado = await db("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
-  const estadoTerminado = await db("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
-  if (!estadoEntregado || pedido.idEstado !== estadoEntregado.idEstado) {
-    throw new Error("El pedido no está en estado Entregado");
-  }
-  if (!estadoTerminado) throw new Error("No existe el estado 'Terminado'");
+    const estadoEntregado = await trx("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
+    const estadoTerminado = await trx("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
+    const estadoAsignado = await trx("estado").whereRaw("LOWER(nombre) = 'asignado'").first();
 
-  await db("itemPedido")
-    .where({ idPedido, idEstado: estadoEntregado.idEstado })
-    .update({ idEstado: estadoTerminado.idEstado });
-  await db(TABLE).where({ idPedido }).update({ idEstado: estadoTerminado.idEstado });
-  await manejarCambioEstadoPedido(idPedido, estadoEntregado.idEstado, estadoTerminado.idEstado);
+    if (estadoEntregado && pedido.idEstado === estadoEntregado.idEstado) {
+      await trx("itemPedido")
+        .where({ idPedido, idEstado: estadoEntregado.idEstado })
+        .update({ idEstado: estadoTerminado.idEstado });
+      await trx(TABLE).where({ idPedido }).update({ idEstado: estadoTerminado.idEstado });
+      await manejarCambioEstadoPedido(idPedido, estadoEntregado.idEstado, estadoTerminado.idEstado, undefined, trx);
+    } else if (estadoTerminado && pedido.idEstado === estadoTerminado.idEstado) {
+      await trx("itemPedido")
+        .where({ idPedido, idEstado: estadoTerminado.idEstado })
+        .update({ idEstado: estadoAsignado.idEstado, fechaTerminado: null });
+      await trx(TABLE).where({ idPedido }).update({ idEstado: estadoAsignado.idEstado });
+    } else {
+      throw new Error("Este pedido no está en un estado que se pueda revertir (debe estar Terminado o Entregado).");
+    }
 
-  return getPedidoById(idPedido);
+    return getPedidoById(idPedido, trx);
+  });
 };
 
 // ─── Límite diario de entregas ──────────────────────────────────────────────
