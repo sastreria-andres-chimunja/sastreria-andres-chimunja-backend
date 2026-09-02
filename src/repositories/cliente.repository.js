@@ -21,13 +21,36 @@ export const searchClientes = async (text) => {
     .orWhere("cedula", "ilike", `%${text}%`);
 };
 
+// No debe existir ya un cliente con el mismo nombres+apellidos+teléfono
+// (comparación insensible a mayúsculas/espacios extremos) -- evita cargar
+// el mismo cliente duplicado dos veces por error. `excluirId` se usa al
+// editar, para no chocar contra el propio registro que se está guardando.
+const existeClienteDuplicado = async (nombres, apellidos, telefono, excluirId) => {
+  let query = db(TABLE)
+    .whereRaw('LOWER(TRIM(nombres)) = LOWER(TRIM(?))', [nombres ?? ""])
+    .whereRaw('LOWER(TRIM(apellidos)) = LOWER(TRIM(?))', [apellidos ?? ""])
+    .whereRaw('TRIM(telefono) = TRIM(?)', [telefono ?? ""]);
+  if (excluirId) query = query.whereNot({ idCliente: excluirId });
+  return query.first();
+};
+
 export const createCliente = async (cliente) => {
+  const duplicado = await existeClienteDuplicado(cliente.nombres, cliente.apellidos, cliente.telefono);
+  if (duplicado) {
+    throw new Error(`Ya existe un cliente con ese nombre y teléfono: ${duplicado.nombres} ${duplicado.apellidos}`);
+  }
+
   const [newCliente] = await db(TABLE).insert(cliente).returning("*");
 
   return newCliente;
 };
 
 export const updateCliente = async (id, cliente) => {
+  const duplicado = await existeClienteDuplicado(cliente.nombres, cliente.apellidos, cliente.telefono, id);
+  if (duplicado) {
+    throw new Error(`Ya existe otro cliente con ese nombre y teléfono: ${duplicado.nombres} ${duplicado.apellidos}`);
+  }
+
   const [updated] = await db(TABLE)
     .where({ idCliente: id })
     .update(cliente)
