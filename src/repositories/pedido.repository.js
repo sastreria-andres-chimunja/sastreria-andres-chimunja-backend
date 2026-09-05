@@ -268,6 +268,12 @@ export const deletePedido = async (idPedido) =>
  * - Terminado → Asignado: limpia fechaTerminado de cada ítem (mismo
  *   criterio que "Reabrir" a nivel de ítem en Mis ítems) -- no hay dinero
  *   que revertir en este paso.
+ * - Asignado → Pendiente: además de bajar el estado, DESASIGNA el empleado
+ *   de cada ítem (idEmpleado y fechaAsignado a null) -- "Pendiente" en
+ *   este sistema significa justamente "sin empleado" (ver getIdEstadoAuto()
+ *   en itemPedido.repository.js); dejar el empleado puesto con estado
+ *   Pendiente sería un estado inconsistente que la próxima sincronización
+ *   volvería a subir solo a Asignado.
  * "No realizado" (estado manual aparte) y Pendiente (ya es el principio)
  * no se pueden revertir por acá.
  * Todo dentro de una transacción: si algo falla a mitad de camino, no
@@ -281,6 +287,7 @@ export const revertirEstadoPedido = async (idPedido) => {
     const estadoEntregado = await trx("estado").whereRaw("LOWER(nombre) = 'entregado'").first();
     const estadoTerminado = await trx("estado").whereRaw("LOWER(nombre) = 'terminado'").first();
     const estadoAsignado = await trx("estado").whereRaw("LOWER(nombre) = 'asignado'").first();
+    const estadoPendiente = await trx("estado").whereRaw("LOWER(nombre) = 'pendiente'").first();
 
     if (estadoEntregado && pedido.idEstado === estadoEntregado.idEstado) {
       await trx("itemPedido")
@@ -293,8 +300,13 @@ export const revertirEstadoPedido = async (idPedido) => {
         .where({ idPedido, idEstado: estadoTerminado.idEstado })
         .update({ idEstado: estadoAsignado.idEstado, fechaTerminado: null });
       await trx(TABLE).where({ idPedido }).update({ idEstado: estadoAsignado.idEstado });
+    } else if (estadoAsignado && pedido.idEstado === estadoAsignado.idEstado) {
+      await trx("itemPedido")
+        .where({ idPedido, idEstado: estadoAsignado.idEstado })
+        .update({ idEstado: estadoPendiente.idEstado, idEmpleado: null, fechaAsignado: null });
+      await trx(TABLE).where({ idPedido }).update({ idEstado: estadoPendiente.idEstado });
     } else {
-      throw new Error("Este pedido no está en un estado que se pueda revertir (debe estar Terminado o Entregado).");
+      throw new Error("Este pedido no está en un estado que se pueda revertir (debe estar Asignado, Terminado o Entregado).");
     }
 
     return getPedidoById(idPedido, trx);
