@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha, diaSiguiente } from "../utils/date.utils.js";
+import * as garantiaRepository from "./garantia.repository.js";
 
 // Excluye ítems cuyo pedido esté marcado "No realizado" — esos pedidos no
 // deben contar para la nómina de ningún empleado.
@@ -47,9 +48,25 @@ export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
     return { ...i, fechaTerminado: formatFecha(i.fechaTerminado), valorEmpleado };
   });
 
-  const pendientes = itemsFormateados.filter((i) => !i.pagado);
-  const pagados = itemsFormateados.filter((i) => i.pagado);
-  const facturado = itemsFormateados.reduce((s, i) => s + i.valorEmpleado, 0);
+  // Garantías reportadas por el empleado en el mismo período (mismo
+  // criterio de fecha que los ítems, ver garantia.repository.js) -- cuentan
+  // como "entrada" propia en su nómina, con el valor completo (no hay
+  // comisión: es reconocimiento por rehacer el trabajo sin cobrarle al
+  // cliente, no un ítem con precio de venta).
+  const garantias = await garantiaRepository.getGarantiasPorEmpleado(idEmpleado, fechaInicio, fechaFin);
+  const garantiasFormateadas = garantias.map((g) => ({
+    idGarantia: g.idGarantia,
+    descripcion: `Garantía — ${g.nombreCliente}`,
+    valorEmpleado: Number(g.valor ?? 0),
+    fechaTerminado: g.fecha,
+    pagado: g.pagado,
+    _esGarantia: true,
+  }));
+
+  const todasEntradas = [...itemsFormateados, ...garantiasFormateadas];
+  const pendientes = todasEntradas.filter((i) => !i.pagado);
+  const pagados = todasEntradas.filter((i) => i.pagado);
+  const facturado = todasEntradas.reduce((s, i) => s + i.valorEmpleado, 0);
   const totalPendiente = pendientes.reduce((s, i) => s + i.valorEmpleado, 0);
   const totalPagadoItems = pagados.reduce((s, i) => s + i.valorEmpleado, 0);
 
@@ -150,8 +167,10 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
       "p.fechaRecibido",
       "p.idCliente"
     );
-  if (desde) itemsQuery = itemsQuery.where("ip.fechaEntrega", ">=", desde);
-  if (hasta) itemsQuery = itemsQuery.where("ip.fechaEntrega", "<=", hasta);
+  // Por fecha en que el ítem pasó a Terminado, no de entrega -- mismo
+  // criterio que getResumenPeriodo()/getNominaResumenTodos().
+  if (desde) itemsQuery = itemsQuery.where("ip.fechaTerminado", ">=", desde);
+  if (hasta) itemsQuery = itemsQuery.where("ip.fechaTerminado", "<", diaSiguiente(hasta));
   const items = await itemsQuery;
 
   const itemsFormateados = items.map((item) => {
@@ -159,7 +178,18 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
     return { ...item, fechaEntrega: formatFecha(item.fechaEntrega), fechaRecibido: formatFecha(item.fechaRecibido), valorEmpleado };
   });
 
-  const totalEntradas = itemsFormateados.reduce((sum, item) => sum + item.valorEmpleado, 0);
+  // Garantías pendientes de reconocer en su nómina (ver getResumenPeriodo()).
+  const garantiasPendientes = await garantiaRepository.getGarantiasPorEmpleado(idEmpleado, fechaInicio, fechaFin, false);
+  const garantiasFormateadas = garantiasPendientes.map((g) => ({
+    idGarantia: g.idGarantia,
+    descripcion: `Garantía — ${g.nombreCliente}`,
+    valorEmpleado: Number(g.valor ?? 0),
+    fechaEntrega: g.fecha,
+    _esGarantia: true,
+  }));
+
+  const entradasFormateadas = [...itemsFormateados, ...garantiasFormateadas];
+  const totalEntradas = entradasFormateadas.reduce((sum, item) => sum + item.valorEmpleado, 0);
 
   // Solo abonos que aún no han sido liquidados
   let abonosQuery = db("movimiento as m")
@@ -178,7 +208,7 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
 
   return {
     empleado,
-    entradas: { items: itemsFormateados, total: totalEntradas },
+    entradas: { items: entradasFormateadas, total: totalEntradas },
     salidas: { abonos: abonosFormateados, total: totalSalidas },
     saldo: totalEntradas - totalSalidas,
     esHistorial: false,
@@ -230,10 +260,14 @@ export const liquidarNomina = async (idEmpleado) => {
     .where("liquidado", false)
     .update({ liquidado: true });
 
-  const totalPagado = items.reduce(
-    (sum, i) => sum + Number(i.valor ?? 0) * Number(i.comisionEmpleado ?? 0) / 100,
-    0
-  );
+  // Garantías pendientes: se marcan pagadas (reconocidas en su nómina) sin
+  // generar un segundo movimiento -- el gasto real ya se registró una sola
+  // vez al crear cada garantía (ver garantia.repository.js).
+  const garantiasLiquidadas = await garantiaRepository.marcarGarantiasPagadas(idEmpleado);
+
+  const totalPagado =
+    items.reduce((sum, i) => sum + Number(i.valor ?? 0) * Number(i.comisionEmpleado ?? 0) / 100, 0) +
+    garantiasLiquidadas.reduce((sum, g) => sum + Number(g.valor ?? 0), 0);
 
   // Se devuelve también el detalle mínimo de los ítems pagados -- lo usa el
   // frontend para armar el comprobante (ticket/PDF/WhatsApp) de "Pagar todo",
@@ -246,14 +280,24 @@ export const liquidarNomina = async (idEmpleado) => {
     comisionEmpleado: Number(i.comisionEmpleado ?? 0),
   }));
 
-  return { itemsPagados: items.length, abonosLiquidados, totalPagado, items: itemsDetalle };
+  return {
+    itemsPagados: items.length,
+    garantiasPagadas: garantiasLiquidadas.length,
+    abonosLiquidados,
+    totalPagado,
+    items: itemsDetalle,
+  };
 };
 
 // ─────────────────────────────────────────────
 //  Nómina general (resumen por empleado)
 // ─────────────────────────────────────────────
 export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
-  const empleados = await db("empleado").select("*");
+  // Empleados inactivos no deben aparecer en el listado general de nómina
+  // (ya no trabajan ahí, no tiene sentido seguir liquidándoles) -- si
+  // llegaran a tener saldo pendiente sin liquidar, se sigue viendo desde
+  // su propio detalle/historial, solo se quita del listado general.
+  const empleados = await db("empleado").where({ activo: true }).select("*");
 
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
@@ -270,8 +314,13 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
       "ip.idEmpleado",
       db.raw('COALESCE(SUM(ip.valor * ip."comisionEmpleado" / 100.0), 0) as "totalEntradas"')
     );
-  if (desde) entradasQuery = entradasQuery.where("ip.fechaEntrega", ">=", desde);
-  if (hasta) entradasQuery = entradasQuery.where("ip.fechaEntrega", "<=", hasta);
+  // Por fecha en que el ítem pasó a Terminado (fecha real de trabajo), no
+  // de entrega -- mismo criterio que getResumenPeriodo(), para que el
+  // listado general y el detalle de cada empleado muestren números
+  // consistentes bajo el mismo filtro de fecha. "fechaTerminado" es
+  // timestamp -- "<" al día siguiente para incluir todo el día "hasta".
+  if (desde) entradasQuery = entradasQuery.where("ip.fechaTerminado", ">=", desde);
+  if (hasta) entradasQuery = entradasQuery.where("ip.fechaTerminado", "<", diaSiguiente(hasta));
   const entradasRows = await entradasQuery;
 
   // Solo abonos no liquidados para mostrar el saldo real pendiente
@@ -288,11 +337,15 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
   if (hasta) salidasQuery = salidasQuery.where("m.fecha", "<", diaSiguiente(hasta));
   const salidasRows = await salidasQuery;
 
+  // Garantías pendientes de cada empleado, mismo criterio de fecha.
+  const garantiasRows = await garantiaRepository.getTotalGarantiasPendientesPorEmpleado(fechaInicio, fechaFin);
+
   const entradasMap = Object.fromEntries(entradasRows.map((r) => [r.idEmpleado, Number(r.totalEntradas)]));
   const salidasMap = Object.fromEntries(salidasRows.map((r) => [r.idEmpleado, Number(r.totalSalidas)]));
+  const garantiasMap = Object.fromEntries(garantiasRows.map((r) => [r.idEmpleado, Number(r.total)]));
 
   return empleados.map((emp) => {
-    const totalEntradas = entradasMap[emp.idEmpleado] ?? 0;
+    const totalEntradas = (entradasMap[emp.idEmpleado] ?? 0) + (garantiasMap[emp.idEmpleado] ?? 0);
     const totalSalidas = salidasMap[emp.idEmpleado] ?? 0;
     return { ...emp, totalEntradas, totalSalidas, saldo: totalEntradas - totalSalidas };
   });

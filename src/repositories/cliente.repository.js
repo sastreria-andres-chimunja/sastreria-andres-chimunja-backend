@@ -63,5 +63,18 @@ export const updateCliente = async (id, cliente) => {
 };
 
 export const deleteCliente = async (id) => {
-  return db(TABLE).where({ idCliente: id }).del();
+  try {
+    return await db(TABLE).where({ idCliente: id }).del();
+  } catch (error) {
+    // 23503 = violación de FK en Postgres -- el cliente tiene pedidos y/o
+    // medidas asociadas (ninguna de esas tablas usa ON DELETE CASCADE a
+    // propósito, para no borrar historial de pedidos en cascada). Se
+    // traduce a un mensaje entendible en vez del error crudo de Postgres.
+    if (error.code === "23503") {
+      throw new Error(
+        "No se puede eliminar el cliente porque tiene pedidos y/o medidas registradas. Elimina primero esos registros."
+      );
+    }
+    throw error;
+  }
 };

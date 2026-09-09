@@ -103,6 +103,7 @@ const formatItem = (item) =>
     ? {
         ...item,
         fechaEntrega: formatFecha(item.fechaEntrega),
+        fechaAsignado: formatFecha(item.fechaAsignado),
         // COUNT(*) de Postgres vuelve como bigint -> node-pg lo entrega como
         // string (mismo criterio ya usado con totalItems en pedido.repository.js).
         numeroItem: item.numeroItem != null ? Number(item.numeroItem) : null,
