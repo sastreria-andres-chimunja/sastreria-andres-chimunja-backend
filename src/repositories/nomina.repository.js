@@ -57,7 +57,9 @@ export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
   const garantiasFormateadas = garantias.map((g) => ({
     idGarantia: g.idGarantia,
     descripcion: `Garantía — ${g.nombreCliente}`,
-    valorEmpleado: Number(g.valor ?? 0),
+    valor: Number(g.valor ?? 0),
+    comisionEmpleado: Number(g.comisionEmpleado ?? 100),
+    valorEmpleado: Number(g.valor ?? 0) * Number(g.comisionEmpleado ?? 100) / 100,
     fechaTerminado: g.fecha,
     pagado: g.pagado,
     _esGarantia: true,
@@ -183,7 +185,9 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
   const garantiasFormateadas = garantiasPendientes.map((g) => ({
     idGarantia: g.idGarantia,
     descripcion: `Garantía — ${g.nombreCliente}`,
-    valorEmpleado: Number(g.valor ?? 0),
+    valor: Number(g.valor ?? 0),
+    comisionEmpleado: Number(g.comisionEmpleado ?? 100),
+    valorEmpleado: Number(g.valor ?? 0) * Number(g.comisionEmpleado ?? 100) / 100,
     fechaEntrega: g.fecha,
     _esGarantia: true,
   }));
@@ -267,7 +271,7 @@ export const liquidarNomina = async (idEmpleado) => {
 
   const totalPagado =
     items.reduce((sum, i) => sum + Number(i.valor ?? 0) * Number(i.comisionEmpleado ?? 0) / 100, 0) +
-    garantiasLiquidadas.reduce((sum, g) => sum + Number(g.valor ?? 0), 0);
+    garantiasLiquidadas.reduce((sum, g) => sum + Number(g.valor ?? 0) * Number(g.comisionEmpleado ?? 100) / 100, 0);
 
   // Se devuelve también el detalle mínimo de los ítems pagados -- lo usa el
   // frontend para armar el comprobante (ticket/PDF/WhatsApp) de "Pagar todo",

@@ -7,3 +7,7 @@ export const createGarantia = async (idEmpleado, nombreCliente, valor) => {
 export const listarGarantias = async (fechaInicio, fechaFin, idEmpleado) => {
   return garantiaRepository.listarGarantias(fechaInicio, fechaFin, idEmpleado);
 };
+
+export const actualizarComisionGarantia = async (idGarantia, comisionEmpleado) => {
+  return garantiaRepository.actualizarComisionGarantia(idGarantia, comisionEmpleado);
+};

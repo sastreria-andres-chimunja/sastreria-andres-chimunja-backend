@@ -15,12 +15,16 @@ const BASE_QUERY = (qb = db) =>
 const formatGarantia = (g) => (g ? { ...g, fecha: formatFecha(g.fecha) } : null);
 
 /**
- * Registra una garantía: cliente + valor. El mismo valor se contabiliza UNA
- * sola vez como gasto real del negocio (movimiento, categoría "Garantías")
- * -- ver nota en la migración 20260909000001_create_garantia.js sobre por
- * qué no se genera un segundo movimiento cuando se liquide en la nómina del
- * empleado (ese "pagado" es solo reconocimiento en su nómina, no un
- * segundo desembolso).
+ * Registra una garantía: cliente + valor. El valor COMPLETO se contabiliza
+ * UNA sola vez como gasto real del negocio (movimiento, categoría
+ * "Garantías") -- ver nota en la migración 20260909000001_create_garantia.js
+ * sobre por qué no se genera un segundo movimiento cuando se liquide en la
+ * nómina del empleado (ese "pagado" es solo reconocimiento en su nómina, no
+ * un segundo desembolso). `comisionEmpleado` (% del valor que se le
+ * reconoce en su nómina, ver migración 20260910000001) nace en 100 -- el
+ * empleado que la crea no elige su propia comisión, la puede ajustar
+ * después el Admin desde el detalle de nómina (mismo patrón que
+ * itemPedido.comisionEmpleado).
  */
 export const createGarantia = async (idEmpleado, nombreCliente, valor) => {
   return db.transaction(async (trx) => {
@@ -36,6 +40,9 @@ export const createGarantia = async (idEmpleado, nombreCliente, valor) => {
       .whereRaw("LOWER(\"nombreTipoMovimiento\") like '%salida%'")
       .first();
 
+    // El gasto real del negocio es siempre el valor COMPLETO -- no se ve
+    // afectado por comisionEmpleado (eso solo determina cuánto de ese
+    // gasto se le reconoce al empleado en su nómina, ver nomina.repository.js).
     await trx("movimiento").insert({
       idTipoMovimiento: tipoSalida?.idTipoMovimiento ?? 2,
       idCategoriaMovimiento: categoria?.idCategoriaMovimiento ?? null,
@@ -51,6 +58,18 @@ export const createGarantia = async (idEmpleado, nombreCliente, valor) => {
 
     return formatGarantia(garantia);
   });
+};
+
+/** Cambia el % de comisión reconocido al empleado por una garantía puntual
+ * -- mismo patrón que cambiarComisionItem() en itemPedido.repository.js.
+ * No toca el movimiento de gasto ya registrado (ese sigue siendo el valor
+ * completo, ver createGarantia()). */
+export const actualizarComisionGarantia = async (idGarantia, comisionEmpleado) => {
+  const [garantia] = await db(TABLE)
+    .where({ idGarantia })
+    .update({ comisionEmpleado })
+    .returning("*");
+  return formatGarantia(garantia);
 };
 
 export const listarGarantias = async (fechaInicio, fechaFin, idEmpleado) => {
@@ -82,8 +101,9 @@ export const getGarantiasPorEmpleado = async (idEmpleado, fechaInicio, fechaFin,
   return garantias.map(formatGarantia);
 };
 
-/** Suma de garantías pendientes de todos los empleados, agrupada por
- * idEmpleado -- para el listado general de nómina (getNominaResumenTodos). */
+/** Suma de garantías pendientes de todos los empleados (ya con su % de
+ * comisión aplicado, no el valor completo), agrupada por idEmpleado --
+ * para el listado general de nómina (getNominaResumenTodos). */
 export const getTotalGarantiasPendientesPorEmpleado = async (fechaInicio, fechaFin) => {
   const desde = parseFecha(fechaInicio);
   const hasta = parseFecha(fechaFin);
@@ -91,7 +111,10 @@ export const getTotalGarantiasPendientesPorEmpleado = async (fechaInicio, fechaF
   let query = db(TABLE)
     .where({ pagado: false })
     .groupBy("idEmpleado")
-    .select("idEmpleado", db.raw('COALESCE(SUM(valor), 0) as total'));
+    .select(
+      "idEmpleado",
+      db.raw('COALESCE(SUM(valor * "comisionEmpleado" / 100.0), 0) as total')
+    );
   if (desde) query = query.where("fecha", ">=", desde);
   if (hasta) query = query.where("fecha", "<", diaSiguiente(hasta));
 

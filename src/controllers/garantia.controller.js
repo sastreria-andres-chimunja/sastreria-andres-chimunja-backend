@@ -22,3 +22,13 @@ export const listarGarantias = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const actualizarComisionGarantia = async (req, res) => {
+  try {
+    const { comisionEmpleado } = req.body;
+    const garantia = await garantiaService.actualizarComisionGarantia(req.params.id, comisionEmpleado);
+    res.json({ garantia });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
