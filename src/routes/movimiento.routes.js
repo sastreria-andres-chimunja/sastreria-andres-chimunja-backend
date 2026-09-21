@@ -4,6 +4,7 @@ import * as movimientoController from "../controllers/movimiento.controller.js";
 const router = Router();
 
 router.get("/", movimientoController.getMovimientos);
+router.get("/balance-dia", movimientoController.getBalanceDia);
 router.get("/:id", movimientoController.getMovimientoById);
 
 router.post("/", movimientoController.createMovimiento);

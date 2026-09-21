@@ -84,6 +84,57 @@ const calcularFechaTerminado = async (idItemPedido, nuevoIdEstado, qb = db) => {
  * - Se desasigna (vuelve a null): se limpia.
  * - Si el empleado no cambia, no se toca nada (undefined = omitir del update).
  */
+// ─── Cupo diario (capacidad de trabajo asignable por día) ──────────────────
+// A diferencia del viejo límite por fecha de ENTREGA (pedido.repository.js
+// getValorProgramado, ya sin uso desde el frontend -- se deja el código
+// intacto por si se quiere consultar/retomar), este mide cuánto trabajo se
+// le ha ASIGNADO a empleados HOY (columna itemPedido.fechaAsignado, que se
+// sella con la fecha real en que ocurre la asignación -- ver
+// calcularFechaAsignado() debajo) sin importar para cuándo es la entrega.
+export const getValorAsignadoHoy = async (excluirIdItem = null, qb = db) => {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const manana = new Date(hoy); manana.setDate(manana.getDate() + 1);
+
+  let query = qb(`${TABLE} as ip`)
+    .whereNotExists(
+      qb("pedido as pnr")
+        .join("estado as enr", "enr.idEstado", "pnr.idEstado")
+        .whereRaw('pnr."idPedido" = ip."idPedido"')
+        .whereRaw("LOWER(enr.nombre) = 'no realizado'")
+    )
+    .where("ip.fechaAsignado", ">=", hoy)
+    .where("ip.fechaAsignado", "<", manana);
+  if (excluirIdItem) query = query.whereNot("ip.idItemPedido", excluirIdItem);
+
+  const { total } = await query.sum({ total: "ip.valor" }).first();
+  return Number(total) || 0;
+};
+
+/** Cupo diario tal como lo debe ver el frontend: límite, ya asignado y disponible. */
+export const getCupoDia = async () => {
+  const limiteRow = await db("limiteDiario").orderBy("idLimiteDiario", "asc").first();
+  const limite = Number(limiteRow?.monto ?? 0);
+  const asignadoHoy = await getValorAsignadoHoy();
+  return { limite, asignadoHoy, disponible: Math.max(0, limite - asignadoHoy) };
+};
+
+/**
+ * Lanza un error si asignar `valorItem` hoy supera el cupo diario
+ * configurado. `excluirIdItem` evita contar dos veces el propio ítem si ya
+ * estaba asignado hoy (p. ej. reasignar de un empleado a otro el mismo día).
+ */
+const verificarCupoDiario = async (valorItem, excluirIdItem, qb = db) => {
+  const limiteRow = await qb("limiteDiario").orderBy("idLimiteDiario", "asc").first();
+  const limite = Number(limiteRow?.monto ?? Infinity);
+  const yaAsignadoHoy = await getValorAsignadoHoy(excluirIdItem, qb);
+  const valor = Number(valorItem ?? 0);
+  if (yaAsignadoHoy + valor > limite) {
+    const disponible = Math.max(0, limite - yaAsignadoHoy);
+    const fmt = (n) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(n);
+    throw new Error(`Cupo diario superado -- disponible hoy ${fmt(disponible)} de ${fmt(limite)}.`);
+  }
+};
+
 const calcularFechaAsignado = async (idItemPedido, nuevoIdEmpleado, qb = db) => {
   const actual = await qb(TABLE).where({ idItemPedido }).select("idEmpleado", "fechaAsignado").first();
   if (!actual) return undefined;
@@ -254,6 +305,7 @@ export const createItemPedido = async (item) => {
   // Pendiente/Asignado), así que esto nunca puede disparar el error de
   // "falta método de pago" -- igual va en transacción por consistencia.
   return db.transaction(async (trx) => {
+    if (idEmpleado) await verificarCupoDiario(item.valor, null, trx);
     const [newItem] = await trx(TABLE).insert(data).returning("*");
     const consolidacion = await sincronizarEstadoPedido(newItem.idItemPedido, undefined, trx);
     return { item: await getItemPedidoById(newItem.idItemPedido, trx), consolidacion };
@@ -274,6 +326,10 @@ export const updateItemPedido = async (idItemPedido, item) => {
       : await getIdEstadoAuto(idEmpleado);
     const fechaTerminado = await calcularFechaTerminado(idItemPedido, idEstado, trx);
     const fechaAsignado = await calcularFechaAsignado(idItemPedido, idEmpleado, trx);
+    // Solo valida cupo cuando esto es una asignación NUEVA de verdad
+    // (calcularFechaAsignado devuelve un Date fresco) -- no en desasignar
+    // (null) ni cuando el empleado no cambió (undefined).
+    if (fechaAsignado instanceof Date) await verificarCupoDiario(item.valor, idItemPedido, trx);
     const data = {
       idEmpleado,
       idEstado,
@@ -310,6 +366,10 @@ export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) => {
   return db.transaction(async (trx) => {
     const idEstado = await getIdEstadoAuto(idEmpleado);
     const fechaAsignado = await calcularFechaAsignado(idItemPedido, idEmpleado, trx);
+    if (fechaAsignado instanceof Date) {
+      const actual = await trx(TABLE).where({ idItemPedido }).select("valor").first();
+      await verificarCupoDiario(actual?.valor, idItemPedido, trx);
+    }
     await trx(TABLE).where({ idItemPedido }).update({
       idEmpleado, idEstado,
       ...(fechaAsignado !== undefined && { fechaAsignado }),

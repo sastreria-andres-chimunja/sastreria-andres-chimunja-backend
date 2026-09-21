@@ -100,6 +100,15 @@ export const asignarEmpleadoItem = async (req, res) => {
   }
 };
 
+export const getCupoDia = async (req, res) => {
+  try {
+    const cupo = await itemPedidoService.getCupoDia();
+    res.json(cupo);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const cambiarComisionItem = async (req, res) => {
   try {
     const { comisionEmpleado } = req.body;

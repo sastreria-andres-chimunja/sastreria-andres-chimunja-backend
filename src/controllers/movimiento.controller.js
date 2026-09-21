@@ -18,6 +18,17 @@ export const getMovimientos = async (req, res) => {
   }
 };
 
+export const getBalanceDia = async (req, res) => {
+  try {
+    const { fecha } = req.query;
+    if (!fecha) return res.status(400).json({ error: "Falta el parámetro 'fecha'" });
+    const balance = await movimientoService.getBalanceDia(fecha);
+    res.json(balance);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 export const createMovimiento = async (req, res) => {
   try {
     const movimiento = await movimientoService.createMovimiento(req.body);

@@ -9,6 +9,10 @@ export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
   return movimientoRepository.getMovimientos(fechaInicio, fechaFin, categoria);
 };
 
+export const getBalanceDia = async (fecha) => {
+  return movimientoRepository.getBalanceDia(fecha);
+};
+
 export const createMovimiento = async (data) => {
   return movimientoRepository.createMovimiento(data);
 };

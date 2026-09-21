@@ -33,10 +33,14 @@ export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
 
   let itemsQuery = excluirPedidosNoRealizados(
     db("itemPedido as ip").where("ip.idEmpleado", idEmpleado).whereNotNull("ip.fechaTerminado")
-  ).select(
-    "ip.idItemPedido", "ip.idPedido", "ip.descripcion", "ip.valor",
-    "ip.comisionEmpleado", "ip.fechaTerminado", "ip.pagado"
-  );
+  )
+    .leftJoin("pedido as p", "p.idPedido", "ip.idPedido")
+    .leftJoin("cliente as c", "c.idCliente", "p.idCliente")
+    .select(
+      "ip.idItemPedido", "ip.idPedido", "ip.descripcion", "ip.valor",
+      "ip.comisionEmpleado", "ip.fechaTerminado", "ip.pagado",
+      db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
+    );
   if (desde) itemsQuery = itemsQuery.where("ip.fechaTerminado", ">=", desde);
   // "fechaTerminado" es timestamp -- "<" al día siguiente para incluir
   // todo el día "hasta" completo (ver diaSiguiente()).
@@ -57,6 +61,7 @@ export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
   const garantiasFormateadas = garantias.map((g) => ({
     idGarantia: g.idGarantia,
     descripcion: `Garantía — ${g.nombreCliente}`,
+    nombreCliente: g.nombreCliente,
     valor: Number(g.valor ?? 0),
     comisionEmpleado: Number(g.comisionEmpleado ?? 100),
     valorEmpleado: Number(g.valor ?? 0) * Number(g.comisionEmpleado ?? 100) / 100,

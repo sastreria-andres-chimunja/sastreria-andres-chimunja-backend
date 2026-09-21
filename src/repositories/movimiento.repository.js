@@ -100,6 +100,38 @@ export const getMovimientos = async (fechaInicio, fechaFin, categoria) => {
   return movimientos.map(formatMovimiento);
 };
 
+// Balance de caja de un día puntual: todo ingreso (idTipoMovimiento=1),
+// cualquier categoría/referencia, agrupado por método de pago -- para el
+// botón "Balance del día" de Movimientos.
+export const getBalanceDia = async (fecha) => {
+  const desde = parseFecha(fecha);
+  const hasta = diaSiguiente(desde);
+
+  const filas = await db(TABLE)
+    .leftJoin("metodoPago as mp", "mp.idMetodoPago", `${TABLE}.idMetodoPago`)
+    .where(`${TABLE}.idTipoMovimiento`, 1)
+    .where(`${TABLE}.fecha`, ">=", desde)
+    .where(`${TABLE}.fecha`, "<", hasta)
+    .groupBy("mp.idMetodoPago", "mp.nombreMetodoPago")
+    .select(
+      "mp.idMetodoPago",
+      db.raw(`COALESCE(mp."nombreMetodoPago", 'Sin método') as "nombreMetodoPago"`),
+      db.raw(`COALESCE(SUM("${TABLE}".valor), 0) as total`),
+      db.raw(`COUNT(*) as cantidad`)
+    )
+    .orderByRaw("total desc");
+
+  const porMetodoPago = filas.map((f) => ({
+    idMetodoPago: f.idMetodoPago,
+    nombreMetodoPago: f.nombreMetodoPago,
+    total: Number(f.total),
+    cantidad: Number(f.cantidad),
+  }));
+  const total = porMetodoPago.reduce((acc, f) => acc + f.total, 0);
+
+  return { fecha: formatFecha(desde), porMetodoPago, total };
+};
+
 const soloColumnasTabla = (movimiento, fechaDefault = null) => ({
   valor:                 movimiento.valor,
   fecha:                 movimiento.fecha ? parseFecha(movimiento.fecha) : (fechaDefault ?? db.fn.now()),

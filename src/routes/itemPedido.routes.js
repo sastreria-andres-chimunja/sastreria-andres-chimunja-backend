@@ -5,6 +5,7 @@ const router = Router();
 
 router.get("/", itemPedidoController.getItemsPedido);
 // Specific sub-routes before generic /:id
+router.get("/cupo-dia", itemPedidoController.getCupoDia);
 router.get("/:id/pagos", itemPedidoController.getPagosItem);
 router.put("/:id/pagar", itemPedidoController.pagarItemPedido);
 router.put("/:id/estado", itemPedidoController.cambiarEstadoItem);
