@@ -24,3 +24,11 @@ export const updateMovimiento = async (id, data) => {
 export const deleteMovimiento = async (id) => {
   return movimientoRepository.deleteMovimiento(id);
 };
+
+export const getCreditosPendientes = async () => {
+  return movimientoRepository.getCreditosPendientes();
+};
+
+export const pagarCredito = async (id, idMetodoPago) => {
+  return movimientoRepository.pagarCredito(id, idMetodoPago);
+};

@@ -5,10 +5,12 @@ const router = Router();
 
 router.get("/", movimientoController.getMovimientos);
 router.get("/balance-dia", movimientoController.getBalanceDia);
+router.get("/creditos", movimientoController.getCreditosPendientes);
 router.get("/:id", movimientoController.getMovimientoById);
 
 router.post("/", movimientoController.createMovimiento);
 
+router.put("/creditos/:id/pagar", movimientoController.pagarCredito);
 router.put("/:id", movimientoController.updateMovimiento);
 
 router.delete("/:id", movimientoController.deleteMovimiento);

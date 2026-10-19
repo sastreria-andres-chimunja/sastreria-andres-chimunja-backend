@@ -62,3 +62,23 @@ export const deleteMovimiento = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const getCreditosPendientes = async (req, res) => {
+  try {
+    const creditos = await movimientoService.getCreditosPendientes();
+    res.json({ creditos });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const pagarCredito = async (req, res) => {
+  try {
+    const { idMetodoPago } = req.body;
+    if (!idMetodoPago) return res.status(400).json({ error: "Falta idMetodoPago." });
+    const movimiento = await movimientoService.pagarCredito(req.params.id, idMetodoPago);
+    res.json({ movimiento });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

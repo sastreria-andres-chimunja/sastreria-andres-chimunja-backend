@@ -155,6 +155,53 @@ export const updateMovimiento = async (idMovimiento, movimiento) => {
   return getMovimientoById(idMovimiento);
 };
 
+/**
+ * Marca un crédito pendiente como pagado: NO crea un movimiento nuevo --
+ * el movimiento del crédito YA es un ingreso (se registra como tal desde
+ * que se consolida con método "Crédito" al entregar el pedido, ver
+ * manejarCambioEstadoPedido() en pedido.repository.js), así que crear otro
+ * duplicaría el ingreso en los reportes. En vez de eso, se le cambia el
+ * método de pago al que realmente se usó para cobrarlo -- con eso el
+ * mismo movimiento deja de aparecer en el tab/listado de "Créditos"
+ * (que filtra por método = Crédito) y pasa a verse en Movimientos bajo su
+ * método real, como cualquier otro ingreso ya cobrado. Se deja un rastro
+ * en la observación de que fue un crédito y cuándo se pagó.
+ */
+export const pagarCredito = async (idMovimiento, idMetodoPagoNuevo) => {
+  const mov = await db(TABLE).where({ idMovimiento }).first();
+  if (!mov) throw new Error("Movimiento no encontrado.");
+
+  const metodoActual = mov.idMetodoPago
+    ? await db("metodoPago").where({ idMetodoPago: mov.idMetodoPago }).first()
+    : null;
+  if (!metodoActual || !/cr.dito/i.test(metodoActual.nombreMetodoPago ?? "")) {
+    throw new Error("Este movimiento no es un crédito pendiente.");
+  }
+
+  const metodoNuevo = await db("metodoPago").where({ idMetodoPago: idMetodoPagoNuevo }).first();
+  if (!metodoNuevo) throw new Error("Selecciona un método de pago válido.");
+  if (/cr.dito/i.test(metodoNuevo.nombreMetodoPago ?? "")) {
+    throw new Error("Selecciona un método de pago distinto a Crédito para darlo de baja.");
+  }
+
+  const hoy = new Date().toLocaleDateString("es-CO");
+  const observacion = mayus(
+    `${mov.observacion ?? ""} -- CRÉDITO PAGADO EL ${hoy} (ERA: ${metodoActual.nombreMetodoPago})`.trim()
+  );
+
+  await db(TABLE).where({ idMovimiento }).update({ idMetodoPago: idMetodoPagoNuevo, observacion });
+  return getMovimientoById(idMovimiento);
+};
+
+/** Créditos pendientes (sin pagar) -- mismo filtro que el tab "Créditos" de Movimientos. */
+export const getCreditosPendientes = async () => {
+  const movimientos = await RICH_QUERY()
+    .whereIn(`${TABLE}.tipoReferencia`, ["itemPedido", "pedido", "Pedidos", "Ventas"])
+    .whereRaw("LOWER(mp.\"nombreMetodoPago\") LIKE '%cr_dito%'")
+    .orderBy(`${TABLE}.fecha`, "desc");
+  return movimientos.map(formatMovimiento);
+};
+
 export const deleteMovimiento = async (idMovimiento) => {
   const mov = await db(TABLE).where({ idMovimiento }).first();
   // El abono que se consolida solo al marcar un pedido como Entregado
