@@ -11,6 +11,7 @@ router.get("/:id", movimientoController.getMovimientoById);
 router.post("/", movimientoController.createMovimiento);
 
 router.put("/creditos/:id/pagar", movimientoController.pagarCredito);
+router.post("/creditos/:id/reversar", movimientoController.reversarCredito);
 router.put("/:id", movimientoController.updateMovimiento);
 
 router.delete("/:id", movimientoController.deleteMovimiento);

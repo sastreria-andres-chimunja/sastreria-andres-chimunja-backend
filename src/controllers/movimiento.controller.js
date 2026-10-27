@@ -82,3 +82,12 @@ export const pagarCredito = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const reversarCredito = async (req, res) => {
+  try {
+    const resultado = await movimientoService.reversarCredito(req.params.id);
+    res.json(resultado);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
