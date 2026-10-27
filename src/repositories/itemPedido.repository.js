@@ -19,8 +19,8 @@ const FOTOS_ITEM = `(
 
 // Número de ítem DENTRO de su propio pedido (1, 2, 3...) -- lo que ya se ve
 // en el detalle del pedido ("Ítem #1", "Ítem #2", calculado ahí como
-// posición en el arreglo, ordenado por fechaEntrega/idItemPedido igual que
-// getItemsPedido() sin idEmpleado). Se expone acá para que "Mis ítems" e
+// posición en el arreglo, en orden de creación (idItemPedido) igual que
+// getItemsPedido() con idPedido). Se expone acá para que "Mis ítems" e
 // "Ítems" (admin) muestren el MISMO número que el detalle del pedido, en
 // vez del idItemPedido interno (que no significa nada para el operario) --
 // cuenta cuántos ítems del mismo pedido van "antes" bajo ese mismo orden y
@@ -29,10 +29,7 @@ const NUMERO_ITEM = `(
   SELECT COUNT(*) + 1
   FROM "itemPedido" ip3
   WHERE ip3."idPedido" = "${TABLE}"."idPedido"
-    AND (
-      ip3."fechaEntrega" < "${TABLE}"."fechaEntrega"
-      OR (ip3."fechaEntrega" = "${TABLE}"."fechaEntrega" AND ip3."idItemPedido" < "${TABLE}"."idItemPedido")
-    )
+    AND ip3."idItemPedido" < "${TABLE}"."idItemPedido"
 ) as "numeroItem"`;
 
 const getIdEstadoAuto = async (idEmpleado) => {
@@ -258,6 +255,11 @@ export const getItemsPedido = async (idPedido, fechaInicio, fechaFin, idEmpleado
   // sentido ahí -- no se tocó a propósito.
   if (idEmpleado && !idPedido) {
     query = query.orderByRaw(`"${TABLE}"."fechaAsignado" DESC NULLS LAST, "${TABLE}"."idItemPedido" DESC`);
+  } else if (idPedido) {
+    // Detalle/edición de UN pedido: orden de creación, el mismo con que se
+    // agregaron. Antes ordenaba por fecha de entrega del ítem, y al agregar
+    // un ítem editando el pedido quedaba intercalado en desorden.
+    query = query.orderBy(`${TABLE}.idItemPedido`, "asc");
   } else {
     // Orden por fecha de entrega (lo más próximo primero) -- para que al
     // operario le lleguen sus ítems asignados en orden de urgencia, no por
