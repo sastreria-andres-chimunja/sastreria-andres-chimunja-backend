@@ -177,6 +177,17 @@ export const manejarCambioEstadoPedido = async (idPedido, idEstadoAnterior, idEs
   }
 
   if (idEstadoAnterior === estadoEntregado.idEstado && idEstadoNuevo !== estadoEntregado.idEstado) {
+    // Si el saldo se entregó a crédito y ese crédito ya se pagó, borrar el
+    // abono automático dejaría el pago apuntando a un movimiento inexistente.
+    const creditoPagado = await trx("movimiento as mv")
+      .join("movimiento as pago", function () {
+        this.on("pago.idReferencia", "=", "mv.idMovimiento").andOnVal("pago.tipoReferencia", "=", "credito");
+      })
+      .where({ "mv.tipoReferencia": "pedido", "mv.idReferencia": idPedido, "mv.autoGenerado": true })
+      .first();
+    if (creditoPagado) {
+      throw new Error("No se puede revertir la entrega: el crédito de este pedido ya fue pagado. Elimina primero el movimiento del pago.");
+    }
     await trx("movimiento")
       .where({ tipoReferencia: "pedido", idReferencia: idPedido, autoGenerado: true })
       .del();
