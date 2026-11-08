@@ -337,7 +337,9 @@ export const updateItemPedido = async (idItemPedido, item) => {
       idEstado,
       idMedida: item.idMedida || null,
       valor: item.valor,
-      comisionEmpleado: item.comisionEmpleado ?? 0,
+      // Si la petición no trae comisión, se conserva la que ya tenía el ítem
+      // (antes se ponía en 0 y el empleado quedaba sin pago).
+      ...(item.comisionEmpleado != null && { comisionEmpleado: item.comisionEmpleado }),
       descripcion: mayus(item.descripcion),
       observacion: mayus(item.observacion) || null,
       fechaEntrega: parseFecha(item.fechaEntrega),
