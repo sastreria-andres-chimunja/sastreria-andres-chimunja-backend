@@ -294,7 +294,10 @@ export const createItemPedido = async (item) => {
     idEstado: await getIdEstadoAuto(idEmpleado),
     idMedida: item.idMedida || null,
     valor: item.valor,
-    comisionEmpleado: item.comisionEmpleado ?? 50,
+    // Siempre 50% al crear: el formulario no tiene campo de comisión (se
+    // ajusta después desde Nómina). Una pestaña con una versión vieja de la
+    // app abierta seguía mandando 0 y el ítem quedaba sin pago al empleado.
+    comisionEmpleado: Number(item.comisionEmpleado) > 0 ? item.comisionEmpleado : 50,
     descripcion: mayus(item.descripcion),
     observacion: mayus(item.observacion) || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
