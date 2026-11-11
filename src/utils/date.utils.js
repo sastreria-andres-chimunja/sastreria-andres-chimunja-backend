@@ -44,10 +44,11 @@ export function formatFecha(dbDate) {
   }
 
   if (dbDate instanceof Date) {
-    const dia = String(dbDate.getUTCDate()).padStart(2, "0");
-    const mes = String(dbDate.getUTCMonth() + 1).padStart(2, "0");
-    const anio = String(dbDate.getUTCFullYear());
-    return `${dia}/${mes}/${anio}`;
+    // Día en hora de Colombia (no UTC): algo hecho a las 8 pm del 10/11 en
+    // Colombia ya es 11/11 en UTC y se mostraba con la fecha del día siguiente.
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Bogota", day: "2-digit", month: "2-digit", year: "numeric",
+    }).format(dbDate); // "dd/mm/yyyy"
   }
 
   return null;
