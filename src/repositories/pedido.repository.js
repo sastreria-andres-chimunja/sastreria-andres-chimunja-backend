@@ -235,6 +235,30 @@ export const createPedido = async (pedido) => {
   return getPedidoById(newPedido.idPedido);
 };
 
+/**
+ * Cuando el admin pasa el pedido a mano a "Terminado" o "Entregado" (select
+ * "Estado del pedido" en Editar pedido), los ítems que tienen empleado y
+ * todavía no estaban terminados pasan a "Terminado" con la fecha de ese
+ * momento -- así entran a la nómina del empleado. Antes solo cambiaba el
+ * pedido: el admin lo veía Terminado, el empleado seguía viendo sus ítems
+ * "Asignado" y esa comisión nunca aparecía en la nómina.
+ * Los ítems quedan en "Terminado" (no "Entregado") aunque el pedido se
+ * entregue: es el estado que la nómina reconoce para pagar.
+ */
+const terminarItemsAlCerrarPedido = async (idPedido, idEstadoAnterior, idEstadoNuevo, trx) => {
+  if (idEstadoAnterior === idEstadoNuevo) return;
+  const estados = await trx("estado").select("idEstado", "nombre");
+  const id = (nombre) => estados.find((e) => e.nombre.toLowerCase() === nombre)?.idEstado;
+  const cerrados = [id("terminado"), id("entregado")];
+  if (!cerrados.includes(idEstadoNuevo) || cerrados.includes(idEstadoAnterior)) return;
+
+  await trx("itemPedido")
+    .where({ idPedido })
+    .whereNotNull("idEmpleado")
+    .whereNotIn("idEstado", [...cerrados, id("no realizado")].filter((x) => x != null))
+    .update({ idEstado: id("terminado"), fechaTerminado: new Date() });
+};
+
 export const updatePedido = async (idPedido, pedido) => {
   // Todo en una sola transacción: si el cambio de estado entra a "Entregado"
   // con saldo pendiente y falta el idMetodoPago, manejarCambioEstadoPedido()
@@ -251,6 +275,8 @@ export const updatePedido = async (idPedido, pedido) => {
       fechaEntrega: parseFecha(pedido.fechaEntrega),
     };
     await trx(TABLE).where({ idPedido }).update(data);
+
+    if (anterior) await terminarItemsAlCerrarPedido(idPedido, anterior.idEstado, pedido.idEstado, trx);
 
     // "Estado del pedido" también se puede editar a mano acá (sin pasar por
     // los ítems) -- si el cambio entra o sale de "Entregado", igual hay que
