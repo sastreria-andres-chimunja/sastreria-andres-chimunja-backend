@@ -118,3 +118,12 @@ export const cambiarComisionItem = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const cambiarFechaTerminado = async (req, res) => {
+  try {
+    const item = await itemPedidoService.cambiarFechaTerminado(req.params.id, req.body.fecha);
+    res.json({ item });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};

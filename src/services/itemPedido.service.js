@@ -34,3 +34,6 @@ export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) =>
   itemPedidoRepository.cambiarComisionItem(idItemPedido, comisionEmpleado);
 
 export const getCupoDia = async () => itemPedidoRepository.getCupoDia();
+
+export const cambiarFechaTerminado = async (idItemPedido, fecha) =>
+  itemPedidoRepository.cambiarFechaTerminado(idItemPedido, fecha);

@@ -228,10 +228,14 @@ const BASE_QUERY = (qb = db) =>
     .leftJoin("medidas as m", "m.idMedida", `${TABLE}.idMedida`)
     .leftJoin("pedido as p", "p.idPedido", `${TABLE}.idPedido`)
     .leftJoin("cliente as c", "c.idCliente", "p.idCliente")
+    .leftJoin("estado as ep", "ep.idEstado", "p.idEstado")
     .select(
       `${TABLE}.*`,
       qb.raw(`emp.nombres || ' ' || emp.apellidos as "nombreEmpleado"`),
       `e.nombre as nombreEstado`,
+      // Estado del PEDIDO: la nómina excluye ítems de pedidos "No realizado",
+      // y el filtro de terminados de Ítems/Mis ítems debe excluirlos igual.
+      `ep.nombre as nombreEstadoPedido`,
       `m.tipoPrenda as tipoPrendaMedida`,
       qb.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
       `c.telefono as telefonoCliente`,
@@ -384,6 +388,29 @@ export const asignarEmpleadoItem = async (idItemPedido, idEmpleado) => {
     const consolidacion = await sincronizarEstadoPedido(idItemPedido, undefined, trx);
     return { item: await getItemPedidoById(idItemPedido, trx), consolidacion };
   });
+};
+
+/**
+ * El admin corrige el día en que se terminó un ítem (p. ej. el empleado lo
+ * marcó tarde) para que cuente en la nómina de ese día. Solo ítems
+ * terminados y todavía sin pagar: uno ya pagado cambiaría de día en el
+ * historial sin que cambie el pago. Se guarda a las 12:00 hora Colombia
+ * para que no quede en el borde entre dos días.
+ */
+export const cambiarFechaTerminado = async (idItemPedido, fecha) => {
+  const iso = parseFecha(fecha);
+  const nueva = /^\d{4}-\d{2}-\d{2}$/.test(iso ?? "") ? new Date(`${iso}T12:00:00-05:00`) : null;
+  if (!nueva || isNaN(nueva) || nueva.toISOString().slice(0, 10) !== iso) {
+    throw new Error("Fecha inválida (usa dd/mm/aaaa).");
+  }
+  if (nueva > new Date(Date.now() + 24 * 3600e3)) throw new Error("La fecha de terminado no puede ser futura.");
+  const item = await db(TABLE).where({ idItemPedido }).first();
+  if (!item) throw new Error("Ítem no encontrado.");
+  if (!item.fechaTerminado) throw new Error("Este ítem no está terminado.");
+  if (item.pagado) throw new Error("Este ítem ya fue pagado al empleado; no se puede cambiar su fecha de terminado.");
+
+  await db(TABLE).where({ idItemPedido }).update({ fechaTerminado: nueva });
+  return getItemPedidoById(idItemPedido);
 };
 
 export const cambiarComisionItem = async (idItemPedido, comisionEmpleado) => {
