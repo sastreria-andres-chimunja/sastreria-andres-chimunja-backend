@@ -278,6 +278,13 @@ export const updatePedido = async (idPedido, pedido) => {
 
     if (anterior) await terminarItemsAlCerrarPedido(idPedido, anterior.idEstado, pedido.idEstado, trx);
 
+    // La comisión de valor fijo es solo para confecciones: si el pedido deja
+    // de serlo, sus ítems sin pagar vuelven a pagarse por %.
+    const tipo = await trx("tipoPedido").where({ idTipoPedido: pedido.idTipoPedido }).first("nombre");
+    if (!/confecci/i.test(tipo?.nombre ?? "")) {
+      await trx("itemPedido").where({ idPedido, pagado: false }).whereNotNull("valorComision").update({ valorComision: null });
+    }
+
     // "Estado del pedido" también se puede editar a mano acá (sin pasar por
     // los ítems) -- si el cambio entra o sale de "Entregado", igual hay que
     // consolidar/revertir el saldo (ver manejarCambioEstadoPedido()).

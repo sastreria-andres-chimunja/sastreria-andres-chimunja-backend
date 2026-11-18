@@ -1,5 +1,6 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha } from "../utils/date.utils.js";
+import { valorEmpleadoItem, etiquetaComision } from "../utils/nomina.utils.js";
 import { mayus } from "../utils/text.utils.js";
 import { manejarCambioEstadoPedido } from "./pedido.repository.js";
 
@@ -290,6 +291,23 @@ export const getItemPedidoById = async (idItemPedido, qb = db) => {
   return formatItem(item);
 };
 
+/**
+ * Valor fijo de comisión del ítem, solo si el pedido es de CONFECCIÓN (en
+ * arreglos siempre null: se paga por %). undefined = no vino en la petición
+ * (al editar, se deja el que ya tenía); "" o null = sin valor fijo.
+ */
+const valorComisionPermitido = async (idPedido, valorComision, qb = db) => {
+  if (valorComision === undefined) return undefined;
+  const pedido = await qb("pedido as p")
+    .leftJoin("tipoPedido as tp", "tp.idTipoPedido", "p.idTipoPedido")
+    .where("p.idPedido", idPedido).first("tp.nombre");
+  const esConfeccion = /confecci/i.test(pedido?.nombre ?? "");
+  if (!esConfeccion || valorComision === null || valorComision === "") return null;
+  const v = Number(valorComision);
+  if (!Number.isFinite(v) || v < 0) throw new Error("El valor de la comisión debe ser un número mayor o igual a 0.");
+  return v;
+};
+
 export const createItemPedido = async (item) => {
   const idEmpleado = item.idEmpleado || null;
   const data = {
@@ -302,6 +320,7 @@ export const createItemPedido = async (item) => {
     // ajusta después desde Nómina). Una pestaña con una versión vieja de la
     // app abierta seguía mandando 0 y el ítem quedaba sin pago al empleado.
     comisionEmpleado: Number(item.comisionEmpleado) > 0 ? item.comisionEmpleado : 50,
+    valorComision: (await valorComisionPermitido(item.idPedido, item.valorComision)) ?? null,
     descripcion: mayus(item.descripcion),
     observacion: mayus(item.observacion) || null,
     fechaEntrega: parseFecha(item.fechaEntrega),
@@ -339,6 +358,8 @@ export const updateItemPedido = async (idItemPedido, item) => {
     // (calcularFechaAsignado devuelve un Date fresco) -- no en desasignar
     // (null) ni cuando el empleado no cambió (undefined).
     if (fechaAsignado instanceof Date) await verificarCupoDiario(item.valor, idItemPedido, trx);
+    const actual = await trx(TABLE).where({ idItemPedido }).first("idPedido");
+    const valorComision = await valorComisionPermitido(actual?.idPedido, item.valorComision, trx);
     const data = {
       idEmpleado,
       idEstado,
@@ -347,6 +368,7 @@ export const updateItemPedido = async (idItemPedido, item) => {
       // Si la petición no trae comisión, se conserva la que ya tenía el ítem
       // (antes se ponía en 0 y el empleado quedaba sin pago).
       ...(item.comisionEmpleado != null && { comisionEmpleado: item.comisionEmpleado }),
+      ...(valorComision !== undefined && { valorComision }),
       descripcion: mayus(item.descripcion),
       observacion: mayus(item.observacion) || null,
       fechaEntrega: parseFecha(item.fechaEntrega),
@@ -435,7 +457,7 @@ export const pagarItemPedido = async (idItemPedido) => {
       .whereRaw("LOWER(\"nombreCategoriaMovimiento\") like '%n%mina%'")
       .first();
 
-    const valorEmpleado = Number(item.valor ?? 0) * Number(item.comisionEmpleado ?? 0) / 100;
+    const valorEmpleado = valorEmpleadoItem(item);
     await db("movimiento").insert({
       idTipoMovimiento: tipoSalida?.idTipoMovimiento ?? 2,
       idCategoriaMovimiento: catNomina?.idCategoriaMovimiento ?? null,
@@ -443,7 +465,7 @@ export const pagarItemPedido = async (idItemPedido) => {
       valor: valorEmpleado,
       tipoReferencia: "nomina_item",
       idReferencia: item.idEmpleado,
-      observacion: `Pago nómina — Ítem #${idItemPedido}: ${item.descripcion ?? ""} (${item.comisionEmpleado ?? 0}%)`,
+      observacion: `Pago nómina — Ítem #${idItemPedido}: ${item.descripcion ?? ""} ${etiquetaComision(item)}`,
       fecha: db.fn.now(),
     });
   }

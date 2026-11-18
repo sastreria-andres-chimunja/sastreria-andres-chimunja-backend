@@ -1,6 +1,7 @@
 import db from "../config/database.js";
 import { parseFecha, formatFecha, diaSiguiente } from "../utils/date.utils.js";
 import * as garantiaRepository from "./garantia.repository.js";
+import { valorEmpleadoItem, VALOR_EMPLEADO_SQL, etiquetaComision } from "../utils/nomina.utils.js";
 
 // Excluye ítems cuyo pedido esté marcado "No realizado" — esos pedidos no
 // deben contar para la nómina de ningún empleado.
@@ -38,7 +39,7 @@ export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
     .leftJoin("cliente as c", "c.idCliente", "p.idCliente")
     .select(
       "ip.idItemPedido", "ip.idPedido", "ip.descripcion", "ip.valor",
-      "ip.comisionEmpleado", "ip.fechaTerminado", "ip.pagado",
+      "ip.comisionEmpleado", "ip.valorComision", "ip.fechaTerminado", "ip.pagado",
       db.raw(`c.nombres || ' ' || c.apellidos as "nombreCliente"`),
     );
   if (desde) itemsQuery = itemsQuery.where("ip.fechaTerminado", ">=", desde);
@@ -48,7 +49,7 @@ export const getResumenPeriodo = async (idEmpleado, fechaInicio, fechaFin) => {
   const items = await itemsQuery.orderBy("ip.fechaTerminado", "desc");
 
   const itemsFormateados = items.map((i) => {
-    const valorEmpleado = Number(i.valor ?? 0) * Number(i.comisionEmpleado ?? 0) / 100;
+    const valorEmpleado = valorEmpleadoItem(i);
     return { ...i, fechaTerminado: formatFecha(i.fechaTerminado), valorEmpleado };
   });
 
@@ -168,6 +169,7 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
       "ip.descripcion",
       "ip.valor",
       "ip.comisionEmpleado",
+      "ip.valorComision",
       "ip.fechaEntrega",
       "ip.idEstado",
       "p.idPedido",
@@ -181,7 +183,7 @@ export const getNominaEmpleado = async (idEmpleado, fechaInicio, fechaFin, histo
   const items = await itemsQuery;
 
   const itemsFormateados = items.map((item) => {
-    const valorEmpleado = Number(item.valor ?? 0) * Number(item.comisionEmpleado ?? 0) / 100;
+    const valorEmpleado = valorEmpleadoItem(item);
     return { ...item, fechaEntrega: formatFecha(item.fechaEntrega), fechaRecibido: formatFecha(item.fechaRecibido), valorEmpleado };
   });
 
@@ -247,7 +249,7 @@ export const liquidarNomina = async (idEmpleado) => {
 
   for (const item of items) {
     await db("itemPedido").where({ idItemPedido: item.idItemPedido }).update({ pagado: true });
-    const valorEmpleado = Number(item.valor ?? 0) * Number(item.comisionEmpleado ?? 0) / 100;
+    const valorEmpleado = valorEmpleadoItem(item);
     await db("movimiento").insert({
       idTipoMovimiento: tipoSalida?.idTipoMovimiento ?? 2,
       idCategoriaMovimiento: catNomina?.idCategoriaMovimiento ?? null,
@@ -255,7 +257,7 @@ export const liquidarNomina = async (idEmpleado) => {
       valor: valorEmpleado,
       tipoReferencia: "nomina_item",
       idReferencia: idEmpleado,
-      observacion: `Pago nómina — Ítem #${item.idItemPedido}: ${item.descripcion ?? ""} (${item.comisionEmpleado ?? 0}%)`,
+      observacion: `Pago nómina — Ítem #${item.idItemPedido}: ${item.descripcion ?? ""} ${etiquetaComision(item)}`,
       fecha: db.fn.now(),
       liquidado: false,
     });
@@ -275,7 +277,7 @@ export const liquidarNomina = async (idEmpleado) => {
   const garantiasLiquidadas = await garantiaRepository.marcarGarantiasPagadas(idEmpleado);
 
   const totalPagado =
-    items.reduce((sum, i) => sum + Number(i.valor ?? 0) * Number(i.comisionEmpleado ?? 0) / 100, 0) +
+    items.reduce((sum, i) => sum + valorEmpleadoItem(i), 0) +
     garantiasLiquidadas.reduce((sum, g) => sum + Number(g.valor ?? 0) * Number(g.comisionEmpleado ?? 100) / 100, 0);
 
   // Se devuelve también el detalle mínimo de los ítems pagados -- lo usa el
@@ -287,6 +289,7 @@ export const liquidarNomina = async (idEmpleado) => {
     descripcion: i.descripcion,
     valor: Number(i.valor ?? 0),
     comisionEmpleado: Number(i.comisionEmpleado ?? 0),
+    valorComision: i.valorComision != null ? Number(i.valorComision) : null,
   }));
 
   return {
@@ -321,7 +324,7 @@ export const getNominaResumenTodos = async (fechaInicio, fechaFin) => {
     .groupBy("ip.idEmpleado")
     .select(
       "ip.idEmpleado",
-      db.raw('COALESCE(SUM(ip.valor * ip."comisionEmpleado" / 100.0), 0) as "totalEntradas"')
+      db.raw(`COALESCE(SUM(${VALOR_EMPLEADO_SQL("ip")}), 0) as "totalEntradas"`)
     );
   // Por fecha en que el ítem pasó a Terminado (fecha real de trabajo), no
   // de entrega -- mismo criterio que getResumenPeriodo(), para que el
