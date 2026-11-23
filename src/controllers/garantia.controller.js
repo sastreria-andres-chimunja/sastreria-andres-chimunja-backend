@@ -32,3 +32,16 @@ export const actualizarComisionGarantia = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const updateGarantia = async (req, res) => {
+  try {
+    const { nombreCliente, valor } = req.body;
+    if (!nombreCliente?.trim() || !(Number(valor) > 0)) {
+      return res.status(400).json({ error: "El cliente es obligatorio y el valor debe ser mayor a 0." });
+    }
+    const garantia = await garantiaService.updateGarantia(req.params.id, nombreCliente.trim(), Number(valor));
+    res.json({ garantia });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};

@@ -6,5 +6,6 @@ const router = Router();
 router.get("/", garantiaController.listarGarantias);
 router.post("/", garantiaController.createGarantia);
 router.put("/:id/comision", garantiaController.actualizarComisionGarantia);
+router.put("/:id", garantiaController.updateGarantia);
 
 export default router;

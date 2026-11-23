@@ -11,3 +11,7 @@ export const listarGarantias = async (fechaInicio, fechaFin, idEmpleado) => {
 export const actualizarComisionGarantia = async (idGarantia, comisionEmpleado) => {
   return garantiaRepository.actualizarComisionGarantia(idGarantia, comisionEmpleado);
 };
+
+export const updateGarantia = async (idGarantia, nombreCliente, valor) => {
+  return garantiaRepository.updateGarantia(idGarantia, nombreCliente, valor);
+};

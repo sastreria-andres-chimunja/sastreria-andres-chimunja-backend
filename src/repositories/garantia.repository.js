@@ -60,6 +60,37 @@ export const createGarantia = async (idEmpleado, nombreCliente, valor) => {
   });
 };
 
+/**
+ * Corrige cliente y/o valor de una garantía todavía pendiente. Si cambia el
+ * valor, también se actualiza el movimiento de gasto que se creó con ella
+ * (sigue siendo el valor completo, ver createGarantia()) para que la caja
+ * cuadre. Una garantía ya pagada no se edita: ya se reconoció en una nómina.
+ */
+export const updateGarantia = async (idGarantia, nombreCliente, valor) => {
+  return db.transaction(async (trx) => {
+    const actual = await trx(TABLE).where({ idGarantia }).first();
+    if (!actual) throw new Error("Garantía no encontrada.");
+    if (actual.pagado) throw new Error("Esta garantía ya fue pagada en la nómina; no se puede editar.");
+
+    const [garantia] = await trx(TABLE)
+      .where({ idGarantia })
+      .update({ nombreCliente: mayus(nombreCliente), valor, updated_at: trx.fn.now() })
+      .returning("*");
+
+    const empleado = await trx("empleado").where({ idEmpleado: actual.idEmpleado }).first();
+    await trx("movimiento")
+      .where({ tipoReferencia: "garantia", idReferencia: idGarantia })
+      .update({
+        valor,
+        observacion: mayus(
+          `Garantía — cliente: ${nombreCliente} (reportada por ${empleado?.nombres ?? ""} ${empleado?.apellidos ?? ""})`
+        ),
+      });
+
+    return formatGarantia(garantia);
+  });
+};
+
 /** Cambia el % de comisión reconocido al empleado por una garantía puntual
  * -- mismo patrón que cambiarComisionItem() en itemPedido.repository.js.
  * No toca el movimiento de gasto ya registrado (ese sigue siendo el valor
